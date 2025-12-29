@@ -32,7 +32,7 @@ FILE_IDS=(
     "1_NZ4uNFYdi3mbxMOzwU94ZF5Y_7PrJCz"
 )
 
-# 3. Create a directory for the downloads (Optional, keeps things clean)
+# 3. Create a directory for the downloads
 mkdir -p downloaded_files
 cd downloaded_files
 
@@ -41,15 +41,24 @@ echo "Starting download of ${#FILE_IDS[@]} files..."
 echo "---------------------------------------------"
 
 for id in "${FILE_IDS[@]}"; do
-    echo "Downloading ID: $id"
-    gdown "https://drive.google.com/uc?id=${id}"
+    echo "Processing ID: $id"
     
-    if [ $? -eq 0 ]; then
-        echo "✅ Success"
-    else
-        echo "❌ Failed to download ID: $id"
-    fi
-    echo "---------------------------------------------"
+    # Start an infinite loop that only breaks on success
+    while true; do
+        # -c enables resume (continue)
+        # --fuzzy helps locate files if extraction fails slightly
+        gdown "https://drive.google.com/uc?id=${id}" -c 
+
+        if [ $? -eq 0 ]; then
+            echo "✅ Success for ID: $id"
+            echo "---------------------------------------------"
+            break # Exit the while loop and move to the next file ID
+        else
+            echo "❌ Failed to download ID: $id"
+            echo "⚠️  Likely Google Quota or Timeout. Sleeping for 60 seconds before retrying..."
+            sleep 60
+        fi
+    done
 done
 
 echo "All tasks finished."
