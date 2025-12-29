@@ -2,40 +2,50 @@
 
 # 1. Check if gdown is installed
 if ! command -v gdown &> /dev/null; then
-    echo "Error: 'gdown' is not installed or not in your PATH."
-    echo "Please install it first by running: pip install gdown"
+    echo "Error: 'gdown' is not installed."
+    echo "Please run: pip install gdown"
     exit 1
 fi
 
 # 2. Define the Folder URL
 FOLDER_URL="https://drive.google.com/drive/u/0/folders/1bOFogbLTm_i-JQRfNKiLcOCNHOyBLUT7"
 
-# 3. Create a directory for the downloads
-# Note: gdown --folder will usually create a subfolder with the Drive folder's name inside this directory.
+# 3. Check for cookies.txt
+# This is crucial for bypassing the "Too many users" error
+if [ -f "cookies.txt" ]; then
+    echo "🍪 Found cookies.txt! Using authenticated download."
+    COOKIE_FLAG="--cookies cookies.txt"
+else
+    echo "⚠️  cookies.txt NOT found."
+    echo "   You are attempting an anonymous download."
+    echo "   If you get 'Too many users' errors, please upload cookies.txt to this folder."
+    COOKIE_FLAG=""
+fi
+
+# 4. Setup Directory
 mkdir -p downloaded_files
 cd downloaded_files
 
-# 4. Download the folder with retry logic
-echo "Starting download of the entire folder..."
+# 5. Download Loop
+echo "Starting download..."
 echo "---------------------------------------------"
 
 while true; do
-    # --folder: tells gdown this is a folder link
-    # --continue: resumes partially downloaded files if they fail
-    # --remaining: (implied in newer gdown versions) skips files that are already fully downloaded
-    gdown "$FOLDER_URL" --folder --continue
+    # We pass the $COOKIE_FLAG variable into the command
+    # --folder: Download whole folder
+    # --continue: Resume partial downloads
+    gdown "$FOLDER_URL" --folder --continue $COOKIE_FLAG
 
-    # Check if the download was successful
     if [ $? -eq 0 ]; then
-        echo "✅ Folder download completed successfully."
-        echo "---------------------------------------------"
-        break # Exit the loop
+        echo "✅ Download successful."
+        break
     else
-        echo "❌ Download interrupted or failed."
-        echo "⚠️  Network issue or Timeout detected. Sleeping for 60 seconds before retrying..."
-        echo "   (It will verify existing files and resume where it left off)"
+        echo "❌ Download failed or interrupted."
+        echo "   (If the error is 'Permission denied' with cookies, your session may have expired."
+        echo "    Export a fresh cookies.txt and try again.)"
+        echo "⚠️  Retrying in 60 seconds..."
         sleep 60
     fi
 done
 
-echo "All tasks finished."
+echo "Done."
