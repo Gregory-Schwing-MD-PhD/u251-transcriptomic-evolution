@@ -1,6 +1,6 @@
 # Transcriptomic Evolution of U251 Glioblastoma Cells: From Culture to Orthotopic Growth and Post-therapy Recurrence
 
-![Visual Abstract](./ASSETS/Visual_abstract.jpg)
+![Visual Abstract](./ASSETS/Visual_abstract.png)
 
 ## Project Overview
 
