@@ -1,0 +1,22 @@
+FILENAME                                           | STATUS   | INTEGRITY Result
+-------------------------------------------------------------------------------------
+IL64B_S21_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
+IL64B_S21_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+C2B_S29_L001_R2_001.fastq.gz                       | 100.0%   | ✅ Passed
+IL66B_S22_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+IL68B_S24_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
+IL69B_S25_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+N269B_S28_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+IL67B_S23_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+NL70B_S26_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
+IL66B_S22_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
+NL71B_S27_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+NL70B_S26_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+N168B_S30_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+N269B_S28_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
+C2B_S29_L001_R1_001.fastq.gz                       | 100.0%   | ✅ Passed
+IL68B_S24_L001_R1_001.fastq.gz                     | 100.0%   | ✅ Passed
+NL71B_S27_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
+IL69B_S25_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
+IL67B_S23_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
+N168B_S30_L001_R2_001.fastq.gz                     | 100.0%   | ✅ Passed
