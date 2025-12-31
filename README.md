@@ -113,7 +113,7 @@ To reproduce the processing of raw data with host removal enabled:
 ```bash
 nextflow run nf-core/rnaseq \
     -r 3.14.2 \
-    -profile docker \
+    -profile singularity \
     --input ANALYSIS/samplesheet.csv \
     --outdir ANALYSIS/results \
     --genome GRCh38 \
