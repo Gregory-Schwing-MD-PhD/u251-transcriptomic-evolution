@@ -112,14 +112,16 @@ To reproduce the processing of raw data with host removal enabled:
 
 ```bash
 nextflow run nf-core/rnaseq \
+    -r 3.14.2 \
     -profile docker \
     --input ANALYSIS/samplesheet.csv \
     --outdir ANALYSIS/results \
     --genome GRCh38 \
     --bbsplit_fasta_list ANALYSIS/bbsplit.csv \
+    --skip_bbsplit false \
     --save_bbsplit_reads \
     --max_cpus 16 \
-    --max_memory '32.GB'
+    --max_memory '64.GB'
 ```
 
 ## Additional Resources
