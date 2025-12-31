@@ -142,8 +142,13 @@ Run the following commands to install the package manager, build the environment
 
 # 1. Install Mambaforge (if not already present)
 ```bash
-wget "[https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname](https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname) -m).sh"
+# Download the installer
+wget "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh"
+
+# Run the installer
 bash Mambaforge-$(uname)-$(uname -m).sh
+
+# Refresh your profile
 source ~/.bashrc
 ```
 
