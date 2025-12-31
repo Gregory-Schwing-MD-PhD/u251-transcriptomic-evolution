@@ -5,3 +5,4 @@ channels:
 dependencies:
   - nextflow=23.10.0
   - singularity>=3.6
+  - openjdk=11  
