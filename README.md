@@ -124,6 +124,45 @@ nextflow run nf-core/rnaseq \
     --max_memory '64.GB'
 ```
 
+## 🛠 Software Requirements & Installation
+
+This pipeline uses a containerized infrastructure to ensure reproducibility. The core workflow is managed by **Nextflow**, software dependencies are isolated via **Singularity**, and the local runtime environment is managed by **Mamba**.
+
+### Core Technologies
+* **[Nextflow](https://www.nextflow.io/) (v23.10.0):** Orchestrates data flow, manages Slurm job submissions, and handles error recovery via the `-resume` flag.
+* **[Singularity/Apptainer](https://apptainer.org/) (>=v3.6):** Executes the bioinformatics tools (STAR, Salmon, BBSplit) within isolated containers to ensure version consistency across cluster nodes.
+* **[Mamba](https://mamba.readthedocs.io/):** A fast implementation of Conda used to manage the Nextflow installation and environment.
+* **[Bioconda](https://bioconda.github.io/):** The software channel providing the bioinformatics-specific packages.
+
+---
+
+### 🚀 Setup and Installation
+
+Run the following commands to install the package manager, build the environment, and activate it:
+
+# 1. Install Mambaforge (if not already present)
+```bash
+wget "[https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname](https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname) -m).sh"
+bash Mambaforge-$(uname)-$(uname -m).sh
+source ~/.bashrc
+```
+
+# 2. Create the environment from the yml file
+```bash
+mamba env create -f envs/nextflow.yml
+```
+
+# 3. Activate the environment
+```bash
+mamba activate nextflow
+```
+
+# 4. Verify installation
+```bash
+nextflow -v
+singularity --version
+```
+
 ## Additional Resources
 
 ### Reference Genomes
