@@ -86,25 +86,54 @@ This repository houses the analysis and data to address this unmet need, integra
 
 ## Bioinformatics Workflow
 
-To ensure reproducibility and standardization, this project utilizes the [nf-core/rnaseq](https://nf-co.re/rnaseq) analysis pipeline.
+To ensure reproducibility and rigorous handling of the xenograft model system, this project utilizes the [nf-core/rnaseq](https://nf-co.re/rnaseq) analysis pipeline (v3.14.2).
+
+### Xenograft Decontamination Strategy
+A critical challenge in orthotopic xenografts is the high sequence conservation between human tumor cells and the rat host brain. Standard alignment to the human genome results in significant false-positive mapping of rat reads (up to 10-15% of total library size), particularly in highly conserved metabolic and structural genes.
+
+To address this, we employ **Competitive Alignment** using [BBSplit](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/) (BBTools suite).
+1.  **Dual Indexing:** Reads are mapped simultaneously to a combined reference of **Human (GRCh38)** and **Rat (mRatBN7.2)**.
+2.  **Disambiguation:**
+    * Reads mapping best to Rat $\rightarrow$ Discarded.
+    * Reads mapping best to Human $\rightarrow$ Retained.
+    * Ambiguous reads are strictly filtered to prevent host signal leakage.
 
 ### Pipeline Steps
 The workflow processes raw FASTQ files through the following steps:
-1.  **QC:** FastQC and MultiQC.
-2.  **Trimming:** TrimGalore! / Cutadapt.
-3.  **Alignment:** STAR aligner mapped to the human reference genome (GRCh38).
-4.  **Quantification:** Salmon / RSEM for gene-level counts.
-5.  **Differential Expression:** Downstream analysis performed in R (DESeq2) comparing:
-    * *In Vitro* (C2B) vs. *Primary* (IL64B, IL67B, IL68B, IL69B) (Adaptation signature)
-    * *Primary* vs. *Recurrent* (IL66B, NL70B, NL71B) (Therapy-driven evolution)
+1.  **QC:** FastQC and MultiQC for raw read quality assessment.
+2.  **Host Removal (BBSplit):** Competitive alignment against `GRCh38` + `mRatBN7.2` to generate clean human-only FASTQ files.
+3.  **Trimming:** TrimGalore! adaptation trimming on decontaminated reads.
+4.  **Alignment:** STAR aligner mapped to the human reference genome (GRCh38).
+5.  **Quantification:** Salmon for transcript-level quantification and aggregation to gene-level counts.
+6.  **Differential Expression:** Downstream analysis performed in R (DESeq2) on "clean" human counts.
 
 ### Usage
-To reproduce the processing of raw data:
+To reproduce the processing of raw data with host removal enabled:
 
 ```bash
 nextflow run nf-core/rnaseq \
     -profile docker \
-    --input samplesheet.csv \
-    --outdir results \
+    --input ANALYSIS/samplesheet.csv \
+    --outdir ANALYSIS/results \
     --genome GRCh38 \
-    --aligner star_salmon
+    --bbsplit_fasta_list ANALYSIS/bbsplit.csv \
+    --save_bbsplit_reads \
+    --max_cpus 16 \
+    --max_memory '32.GB'
+```
+
+## Additional Resources
+
+### Reference Genomes
+For the competitive alignment (BBSplit) step, the following specific genome assemblies were used. These must be downloaded locally and referenced in `bbsplit.csv`.
+
+* **Human Reference (Target):** GRCh38 (GENCODE Release 44)
+    * [Download FASTA](ftp.ebi.ac.uk)
+* **Rat Reference (Host):** mRatBN7.2 (Ensembl Release 110)
+    * *Note: mRatBN7.2 is preferred over Rnor6.0 due to improved continuity and reduced misassembly.*
+    * [Download FASTA](ftp.ensembl.org)
+
+### Tools & Documentation
+* [nf-core/rnaseq Documentation](https://nf-co.re/rnaseq)
+* [BBTools / BBSplit Guide](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/)
+* Visualase® Clinical System Info
