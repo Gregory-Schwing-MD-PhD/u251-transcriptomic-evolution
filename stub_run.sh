@@ -15,11 +15,12 @@ export PATH="${HOME}/mambaforge/envs/nextflow/bin:$PATH"
 unset JAVA_HOME
 
 # 2. Paths
-export NXF_SINGULARITY_CACHEDIR="${HOME}/singularity_cache"
+# XDG is important for Singularity stability on clusters
 export XDG_RUNTIME_DIR="${HOME}/xdr"
-export NXF_EXECUTOR=slurm
+mkdir -p $XDG_RUNTIME_DIR
 
 # 3. Stub-run Command
+# Nextflow picks up the executor and QoS from 'nextflow.config' automatically
 nextflow run nf-core/rnaseq \
     -r 3.22.2 \
     -stub-run \
@@ -30,6 +31,4 @@ nextflow run nf-core/rnaseq \
     --bbsplit_fasta_list ANALYSIS/bbsplit.csv \
     --skip_bbsplit false \
     --save_bbsplit_reads \
-    --max_cpus 16 \
-    --max_memory '64.GB' \
     -resume
