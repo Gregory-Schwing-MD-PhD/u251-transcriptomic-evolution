@@ -3,6 +3,6 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - nextflow=23.10.0
+  - nextflow=25.10.2   
   - singularity>=3.6
-  - openjdk=11  
+  - openjdk=17         

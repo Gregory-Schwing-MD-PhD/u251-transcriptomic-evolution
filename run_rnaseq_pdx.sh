@@ -2,32 +2,33 @@
 #SBATCH -q primary
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=2      # Only 2 needed; it just manages other jobs
-#SBATCH --mem=12G              # Matches your NXF_OPTS overhead
-#SBATCH --time=7-00:00:00      # Keep it long; this "Master" job must stay alive
+#SBATCH --cpus-per-task=2      # Master job only needs 2 CPUs to orchestrate
+#SBATCH --mem=16G              # Master job overhead
+#SBATCH --time=7-00:00:00      # 7-day limit (Master must stay alive while workers run)
 #SBATCH --mail-user=go2432@wayne.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH -o rnaseq_master_%j.out
-#SBATCH -e rnaseq_master_%j.err
+#SBATCH -o rnaseq_prod_%j.out
+#SBATCH -e rnaseq_prod_%j.err
 
-# 1. Environment Setup
-source "${HOME}/mambaforge/etc/profile.d/mamba.sh"
+# 1. Environment Setup (The Verified "Quiet" Way)
+source "${HOME}/mambaforge/etc/profile.d/conda.sh"
 source activate nextflow
+export PATH="${HOME}/mambaforge/envs/nextflow/bin:$PATH"
+unset JAVA_HOME
 
-# 2. Singularity & Path Setup
-export NXF_SINGULARITY_CACHEDIR=${HOME}/singularity_cache
-mkdir -p $NXF_SINGULARITY_CACHEDIR
-mkdir -p ${HOME}/xdr
-export XDG_RUNTIME_DIR=${HOME}/xdr
-
-# 3. Nextflow Tuning (from your successful runs)
+# 2. Paths & Cluster Settings
+export NXF_SINGULARITY_CACHEDIR="${HOME}/singularity_cache"
+export XDG_RUNTIME_DIR="${HOME}/xdr"
 export NXF_EXECUTOR=slurm
-export NXF_OPTS="-Xms2G -Xmx8G"
 
-# 4. The Command
-# Note: We use -profile singularity,slurm to combine tool handling + job submission
+# Ensure directories exist
+mkdir -p $NXF_SINGULARITY_CACHEDIR
+mkdir -p $XDG_RUNTIME_DIR
+
+# 3. The Production Command
+# Using -resume is critical for large runs
 nextflow run nf-core/rnaseq \
-    -r 3.14.2 \
+    -r 3.22.2 \
     -profile singularity,slurm \
     --input ANALYSIS/samplesheet.csv \
     --outdir ANALYSIS/results \
