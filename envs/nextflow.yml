@@ -1,0 +1,7 @@
+name: nextflow
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - nextflow=23.10.0
+  - singularity>=3.6
