@@ -126,15 +126,16 @@ We explicitly model three distinct evolutionary pressures:
 nextflow run nf-core/differentialabundance \
     -r 1.5.0 \
     -profile singularity \
-    --input ANALYSIS/metadata.csv \
-    --contrasts ANALYSIS/contrasts.csv \
-    --matrix ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv \
-    --gtf ANALYSIS/refs/GRCh38.primary_assembly.annotation.gtf.gz \
-    --genesets ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt \
+    --input "$(pwd)/ANALYSIS/metadata.csv" \
+    --contrasts "$(pwd)/ANALYSIS/contrasts.csv" \
+    --matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv" \
+    --genome GRCh38 \
+    --genesets "$(pwd)/ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt" \
     --study_name "U251_LITT_Evolution" \
-    --outdir ANALYSIS/results_differential \
+    --outdir "$(pwd)/ANALYSIS/results_differential" \
     --shinyngs_build_app \
-    --deseq2_min_replicates_for_replace 3
+    --deseq2_min_replicates_for_replace 3 \
+    -resume
 ```
 
 ## 🛠 Software Requirements & Installation
