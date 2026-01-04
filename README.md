@@ -113,7 +113,7 @@ nextflow run nf-core/rnaseq \
 ### Phase 2: Statistical Analysis & Differential Abundance
 **Tool:** `nf-core/differentialabundance` (v1.5.0)
 
-Raw counts are transformed into biological insights using DESeq2. This phase applies generalized linear modeling to identify genes that are significantly perturbed by the microenvironment or therapeutic stress.
+Raw counts are transformed into biological insights using DESeq2. This phase applies generalized linear modeling to identify genes that are significantly perturbed by the microenvironment or therapeutic stress. Furthermore, it performs **Gene Set Enrichment Analysis (GSEA)** against the MSigDB Hallmark collection to identify coordinated pathway shifts (e.g., Hypoxia, Epithelial Mesenchymal Transition).
 
 **Rationale for Contrasts**
 We explicitly model three distinct evolutionary pressures:
@@ -130,6 +130,8 @@ nextflow run nf-core/differentialabundance \
     --contrasts ANALYSIS/contrasts.csv \
     --matrix ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv \
     --gtf ANALYSIS/refs/GRCh38.primary_assembly.annotation.gtf.gz \
+    --genesets ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt \
+    --study_name "U251_LITT_Evolution" \
     --outdir ANALYSIS/results_differential \
     --shinyngs_build_app \
     --deseq2_min_replicates_for_replace 3
@@ -181,14 +183,23 @@ singularity --version
 
 ## Additional Resources
 
-### Reference Genomes
-For the competitive alignment (BBSplit) step, the following specific genome assemblies were used. These must be downloaded locally and referenced in `bbsplit.csv`.
+### Reference Genomes & Databases
+For alignment and enrichment analysis, the following specific assemblies and databases were used. These must be downloaded locally.
 
+**1. Sequence Alignment & Host Removal**
 * **Human Reference (Target):** GRCh38 (GENCODE Release 44)
-    * [Download FASTA](ftp.ebi.ac.uk)
+    * [Download FASTA (ftp.ebi.ac.uk)](http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_44/GRCh38.primary_assembly.genome.fa.gz)
 * **Rat Reference (Host):** mRatBN7.2 (Ensembl Release 110)
     * *Note: mRatBN7.2 is preferred over Rnor6.0 due to improved continuity and reduced misassembly.*
-    * [Download FASTA](ftp.ensembl.org)
+    * [Download FASTA (ftp.ensembl.org)](http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz)
+
+**2. Quantification & Pathway Analysis**
+* **Gene Annotation (GTF):** GENCODE Release 44
+    * Required for mapping Ensembl IDs to Gene Symbols.
+    * [Download GTF (ftp.ebi.ac.uk)](http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_44/GRCh38.primary_assembly.annotation.gtf.gz)
+* **Pathway Database (GMT):** MSigDB Hallmark Gene Sets (v2023.2)
+    * Required for GSEA to identify biological states (e.g., Hypoxia, EMT).
+    * [Download GMT (Broad Institute)](https://data.broadinstitute.org/gsea-msigdb/msigdb/release/2023.2.Hs/h.all.v2023.2.Hs.symbols.gmt)
 
 ### Tools & Documentation
 * [nf-core/rnaseq Documentation](https://nf-co.re/rnaseq)
