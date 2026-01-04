@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the target directory
-TARGET_DIR="ANALYSIS/refs"
+TARGET_DIR="refs"
 
 # 1. Create the directory if it doesn't exist
 mkdir -p "$TARGET_DIR"
