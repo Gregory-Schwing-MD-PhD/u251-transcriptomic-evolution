@@ -86,29 +86,15 @@ This repository houses the analysis and data to address this unmet need, integra
 
 ## Bioinformatics Workflow
 
-To ensure reproducibility and rigorous handling of the xenograft model system, this project utilizes the [nf-core/rnaseq](https://nf-co.re/rnaseq) analysis pipeline (v3.14.2).
+To ensure reproducibility and rigorous handling of the xenograft model system, this project utilizes a two-phase Nextflow pipeline.
 
-### Xenograft Decontamination Strategy
-A critical challenge in orthotopic xenografts is the high sequence conservation between human tumor cells and the rat host brain. Standard alignment to the human genome results in significant false-positive mapping of rat reads (up to 10-15% of total library size), particularly in highly conserved metabolic and structural genes.
+### Phase 1: Alignment & Xenograft Decontamination
+**Tool:** `nf-core/rnaseq` (v3.22.2)
 
-To address this, we employ **Competitive Alignment** using [BBSplit](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/) (BBTools suite).
+A critical challenge in orthotopic xenografts is the high sequence conservation between human tumor cells and the rat host brain. To address this, we employ **Competitive Alignment** using [BBSplit](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/).
 1.  **Dual Indexing:** Reads are mapped simultaneously to a combined reference of **Human (GRCh38)** and **Rat (mRatBN7.2)**.
-2.  **Disambiguation:**
-    * Reads mapping best to Rat $\rightarrow$ Discarded.
-    * Reads mapping best to Human $\rightarrow$ Retained.
-    * Ambiguous reads are strictly filtered to prevent host signal leakage.
-
-### Pipeline Steps
-The workflow processes raw FASTQ files through the following steps:
-1.  **QC:** FastQC and MultiQC for raw read quality assessment.
-2.  **Host Removal (BBSplit):** Competitive alignment against `GRCh38` + `mRatBN7.2` to generate clean human-only FASTQ files.
-3.  **Trimming:** TrimGalore! adaptation trimming on decontaminated reads.
-4.  **Alignment:** STAR aligner mapped to the human reference genome (GRCh38).
-5.  **Quantification:** Salmon for transcript-level quantification and aggregation to gene-level counts.
-6.  **Differential Expression:** Downstream analysis performed in R (DESeq2) on "clean" human counts.
-
-### Usage
-To reproduce the processing of raw data with host removal enabled:
+2.  **Disambiguation:** Reads mapping best to Rat are discarded; reads mapping best to Human are retained.
+3.  **Quantification:** "Clean" human reads are aligned (STAR) and quantified (Salmon).
 
 ```bash
 nextflow run nf-core/rnaseq \
@@ -122,6 +108,31 @@ nextflow run nf-core/rnaseq \
     --save_bbsplit_reads \
     --max_cpus 16 \
     --max_memory '64.GB'
+```
+
+### Phase 2: Statistical Analysis & Differential Abundance
+**Tool:** `nf-core/differentialabundance` (v1.5.0)
+
+Raw counts are transformed into biological insights using DESeq2. This phase applies generalized linear modeling to identify genes that are significantly perturbed by the microenvironment or therapeutic stress.
+
+**Rationale for Contrasts**
+We explicitly model three distinct evolutionary pressures:
+
+1.  **Brain Adaptation** (*Culture vs. Primary*): Defines the "Engraftment Shock." Identifies genes required to transition from plastic to the brain parenchyma.
+2.  **Therapy Impact** (*Primary vs. Recurrent*): Defines "Resistance." Isolates the specific transcriptomic shifts driven by thermal ablation and recovery.
+3.  **Core Brain Signature** (*In Vitro vs. All In Vivo*): Defines "Invasion." By grouping Primary and Recurrent tumors against Culture, we identify the universal machinery required for U251 survival in the brain, independent of therapy.
+
+```bash
+nextflow run nf-core/differentialabundance \
+    -r 1.5.0 \
+    -profile singularity \
+    --input ANALYSIS/metadata.csv \
+    --contrasts ANALYSIS/contrasts.csv \
+    --matrix ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv \
+    --gtf ANALYSIS/refs/GRCh38.primary_assembly.annotation.gtf.gz \
+    --outdir ANALYSIS/results_differential \
+    --shinyngs_build_app \
+    --deseq2_min_replicates_for_replace 3
 ```
 
 ## 🛠 Software Requirements & Installation
@@ -182,4 +193,5 @@ For the competitive alignment (BBSplit) step, the following specific genome asse
 ### Tools & Documentation
 * [nf-core/rnaseq Documentation](https://nf-co.re/rnaseq)
 * [BBTools / BBSplit Guide](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/)
-* Visualase® Clinical System Info
+* [DESeq2 Bioconductor Guide](https://bioconductor.org/packages/release/bioc/html/DESeq2.html)
+* [Visualase® Clinical System Info](https://www.medtronic.com/us-en/healthcare-professionals/products/neurological/laser-ablation-systems/visualase.html)
