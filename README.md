@@ -203,6 +203,6 @@ For alignment and enrichment analysis, the following specific assemblies and dat
 
 ### Tools & Documentation
 * [nf-core/rnaseq Documentation](https://nf-co.re/rnaseq)
+* [nf-core/differentialabundance Documentation](https://nf-co.re/differentialabundance/1.5.0)
 * [BBTools / BBSplit Guide](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/)
-* [DESeq2 Bioconductor Guide](https://bioconductor.org/packages/release/bioc/html/DESeq2.html)
 * [Visualase® Clinical System Info](https://www.medtronic.com/us-en/healthcare-professionals/products/neurological/laser-ablation-systems/visualase.html)
