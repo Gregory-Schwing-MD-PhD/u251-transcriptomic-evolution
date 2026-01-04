@@ -12,8 +12,7 @@
 
 # 1. Environment Setup
 source "${HOME}/mambaforge/etc/profile.d/conda.sh"
-# Use 'mamba activate' or 'conda activate' depending on your install
-mamba activate nextflow 
+source activate nextflow
 export PATH="${HOME}/mambaforge/envs/nextflow/bin:$PATH"
 unset JAVA_HOME
 
@@ -22,7 +21,7 @@ export XDG_RUNTIME_DIR="${HOME}/xdr"
 mkdir -p $XDG_RUNTIME_DIR
 
 # 3. The Production Command
-# Updated: Added missing '\' and fixed '-resume' typo
+# Note: Syntax fixed (added backslash and corrected resume flag)
 nextflow run nf-core/differentialabundance \
     -r 1.5.0 \
     -profile singularity \
