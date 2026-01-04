@@ -28,7 +28,7 @@ nextflow run nf-core/differentialabundance \
     --input ANALYSIS/metadata.csv \
     --contrasts ANALYSIS/contrasts.csv \
     --matrix ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv \
-    --gtf ANALYSIS/refs/GRCh38.primary_assembly.annotation.gtf.gz \
+    --genome GRCh38 \
     --genesets ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt \
     --study_name "U251_LITT_Evolution" \
     --outdir ANALYSIS/results_differential \
