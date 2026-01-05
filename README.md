@@ -259,10 +259,15 @@ For alignment and enrichment analysis, the following specific assemblies and dat
 * **Annotation (GTF):**
     * [Download (ftp.ensembl.org)](http://ftp.ensembl.org/pub/release-110/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.110.gtf.gz)
 
-**3. Pathway Database**
-* **MSigDB Hallmark Gene Sets (v2023.2):**
-    * Required for GSEA to identify biological states (e.g., Hypoxia, EMT).
-    * [Download GMT (Broad Institute)](https://data.broadinstitute.org/gsea-msigdb/msigdb/release/2023.2.Hs/h.all.v2023.2.Hs.symbols.gmt)
+**3. Pathway Databases**
+* **Human Hallmarks (Standard):**
+    * [Download MSigDB v2023.2 (Broad Institute)](https://data.broadinstitute.org/gsea-msigdb/msigdb/release/2023.2.Hs/h.all.v2023.2.Hs.symbols.gmt)
+* **Rat Hallmarks (Generated):**
+    * *Note:* There is no official Rat GMT. The file `r.hallmark.v2023.2.Rn.symbols.gmt` must be generated locally using the R package `msigdbr` to map Human Hallmarks to Rat orthologs.
+* **Brain.GMT (Tissue-Specific):**
+    * A curated database of brain-related functional gene sets (e.g., Glioblastoma signaling, Microglial activation, Astrocyte polarization) not found in standard MSigDB.
+    * *Source:* Pusarla et al., 2024 ("A Curated Database of Brain-Related Functional Gene Sets").
+    * [Access Database / Paper](https://doi.org/10.1093/database/baae005)
 
 ### Tools & Documentation
 * [nf-core/rnaseq Documentation](https://nf-co.re/rnaseq)
