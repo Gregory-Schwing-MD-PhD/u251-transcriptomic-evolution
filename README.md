@@ -105,12 +105,41 @@ A critical challenge in orthotopic xenografts is the high sequence conservation 
 3.  **Quantification:** "Clean" human reads are aligned (STAR) and quantified (Salmon).
 
 ```bash
+Here is the completely updated Bioinformatics Workflow section.
+
+I have updated the commands to use the Local Reference Genomes (referencing the files you downloaded to ANALYSIS/refs/) and ensured the advanced resource parameters (--max_cpus 16, --max_memory '64.GB') are included in both RNA-seq steps for consistency.
+
+Markdown
+
+## Bioinformatics Workflow: The Dual-Species Strategy
+
+To maximize the utility of the orthotopic xenograft model, this project employs a **Dual-Species Workflow**. Raw sequencing reads are computationally sorted into **Human (Tumor)** and **Rat (Host)** streams, creating two parallel experiments from a single dataset.
+
+| Experiment | **1. Tumor Evolution** | **2. Host Microenvironment** |
+| :--- | :--- | :--- |
+| **Target Organism** | Human (U251 Cells) | Rat (Brain Stroma/Microglia) |
+| **Input Data** | Human-mapping reads | Rat-mapping reads (discarded from Exp 1) |
+| **Biological Goal** | Track tumor adaptation & resistance | Track inflammation, gliosis & scarring |
+| **Key Contrast** | Primary vs. Recurrent (Resistance) | Tumor vs. Control (Inflammation) |
+
+### Phase 1: Alignment & Species Sorting
+**Tool:** `nf-core/rnaseq` (v3.22.2)
+
+A critical challenge in orthotopic xenografts is the high sequence conservation between human tumor cells and the rat host brain. To address this, we employ **Competitive Alignment** using [BBSplit](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/).
+1.  **Dual Indexing:** Reads are mapped simultaneously to a combined reference of **Human (GRCh38)** and **Rat (mRatBN7.2)**.
+2.  **Disambiguation:** Reads mapping best to Rat are segregated; reads mapping best to Human are retained.
+3.  **Quantification:** "Clean" human reads are aligned (STAR) and quantified (Salmon).
+
+*Note: Reference genomes are loaded locally from `ANALYSIS/refs/` to ensure reproducibility and prevent version drift.*
+
+```bash
 nextflow run nf-core/rnaseq \
     -r 3.22.2 \
     -profile singularity \
     --input ANALYSIS/samplesheet.csv \
     --outdir ANALYSIS/results \
-    --genome GRCh38 \
+    --fasta ANALYSIS/refs/human/GRCh38.primary_assembly.genome.fa \
+    --gtf ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf \
     --bbsplit_fasta_list ANALYSIS/bbsplit.csv \
     --skip_bbsplit false \
     --save_bbsplit_reads \
@@ -137,7 +166,7 @@ nextflow run nf-core/differentialabundance \
     --contrasts "$(pwd)/ANALYSIS/contrasts.csv" \
     --matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv" \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_lengths.tsv" \
-    --genome GRCh38 \
+    --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf" \
     --genesets "$(pwd)/ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt" \
     --study_name "U251_LITT_Evolution" \
     --outdir "$(pwd)/ANALYSIS/results_differential" \
@@ -163,9 +192,12 @@ nextflow run nf-core/rnaseq \
     -profile singularity \
     --input ANALYSIS/samplesheet_host.csv \
     --outdir ANALYSIS/results_host \
-    --genome mRatBN7.2 \
+    --fasta ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa \
+    --gtf ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf \
     --remove_ribo_rna \
     --skip_bbsplit \
+    --max_cpus 16 \
+    --max_memory '64.GB' \
     -resume
 ```
 
@@ -178,7 +210,7 @@ nextflow run nf-core/differentialabundance \
     --contrasts "$(pwd)/ANALYSIS/contrasts_host.csv" \
     --matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_counts.tsv" \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_lengths.tsv" \
-    --genome mRatBN7.2 \
+    --gtf "$(pwd)/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf" \
     --study_name "U251_Host_Response" \
     --outdir "$(pwd)/ANALYSIS/results_host_differential" \
     --shinyngs_build_app \
