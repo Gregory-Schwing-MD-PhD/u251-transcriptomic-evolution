@@ -87,25 +87,6 @@ This repository houses the analysis and data to address this unmet need, integra
 
 ## Bioinformatics Workflow: The Dual-Species Strategy
 
-To maximize the utility of the orthotopic xenograft model, this project employs a **Dual-Species Workflow**. Raw sequencing reads are computationally sorted into **Human (Tumor)** and **Rat (Host)** streams, creating two parallel experiments from a single dataset. 
-
-| Experiment | **1. Tumor Evolution** | **2. Host Microenvironment** |
-| :--- | :--- | :--- |
-| **Target Organism** | Human (U251 Cells) | Rat (Brain Stroma/Microglia) |
-| **Input Data** | Human-mapping reads | Rat-mapping reads (discarded from Exp 1) |
-| **Biological Goal** | Track tumor adaptation & resistance | Track inflammation, gliosis & scarring |
-| **Key Contrast** | Primary vs. Recurrent (Resistance) | Tumor vs. Control (Inflammation) |
-
-### Phase 1: Alignment & Species Sorting
-**Tool:** `nf-core/rnaseq` (v3.22.2)
-
-A critical challenge in orthotopic xenografts is the high sequence conservation between human tumor cells and the rat host brain. To address this, we employ **Competitive Alignment** using [BBSplit](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/).
-1.  **Dual Indexing:** Reads are mapped simultaneously to a combined reference of **Human (GRCh38)** and **Rat (mRatBN7.2)**.
-2.  **Disambiguation:** Reads mapping best to Rat are segregated; reads mapping best to Human are retained.
-3.  **Quantification:** "Clean" human reads are aligned (STAR) and quantified (Salmon).
-
-## Bioinformatics Workflow: The Dual-Species Strategy
-
 To maximize the utility of the orthotopic xenograft model, this project employs a **Dual-Species Workflow**. Raw sequencing reads are computationally sorted into **Human (Tumor)** and **Rat (Host)** streams, creating two parallel experiments from a single dataset.
 
 | Experiment | **1. Tumor Evolution** | **2. Host Microenvironment** |
@@ -179,6 +160,8 @@ Reads identified as "Rat" by BBSplit in Phase 1 are not discarded but are re-ana
 2.  **Ablation Scarring** (*Recurrent Tumor vs. Primary Tumor*): Differentiates the chronic inflammatory signature of the LITT burn scar from the baseline tumor inflammation.
 
 **Step 1: Re-align Rat Reads**
+*Note: We map the discarded reads to the local Rat reference (`mRatBN7.2`) using the same resource constraints as the primary analysis.*
+
 ```bash
 nextflow run nf-core/rnaseq \
     -r 3.22.2 \
@@ -195,6 +178,8 @@ nextflow run nf-core/rnaseq \
 ```
 
 **Step 2: Differential Abundance (Host)**
+*Note: Requires the Rat-specific Hallmark GMT file generated via `msigdbr`.*
+
 ```bash
 nextflow run nf-core/differentialabundance \
     -r 1.5.0 \
@@ -204,6 +189,7 @@ nextflow run nf-core/differentialabundance \
     --matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_counts.tsv" \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_lengths.tsv" \
     --gtf "$(pwd)/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf" \
+    --genesets "$(pwd)/ANALYSIS/refs/r.hallmark.v2023.2.Rn.symbols.gmt" \
     --study_name "U251_Host_Response" \
     --outdir "$(pwd)/ANALYSIS/results_host_differential" \
     --shinyngs_build_app \
