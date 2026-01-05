@@ -106,7 +106,7 @@ A critical challenge in orthotopic xenografts is the high sequence conservation 
 
 ```bash
 nextflow run nf-core/rnaseq \
-    -r 3.14.2 \
+    -r 3.22.2 \
     -profile singularity \
     --input ANALYSIS/samplesheet.csv \
     --outdir ANALYSIS/results \
@@ -115,7 +115,8 @@ nextflow run nf-core/rnaseq \
     --skip_bbsplit false \
     --save_bbsplit_reads \
     --max_cpus 16 \
-    --max_memory '64.GB'
+    --max_memory '64.GB' \
+    -resume
 ```
 
 ### Phase 2A: Tumor Analysis (Human Reads)
@@ -158,7 +159,7 @@ Reads identified as "Rat" by BBSplit in Phase 1 are not discarded but are re-ana
 **Step 1: Re-align Rat Reads**
 ```bash
 nextflow run nf-core/rnaseq \
-    -r 3.14.2 \
+    -r 3.22.2 \
     -profile singularity \
     --input ANALYSIS/samplesheet_host.csv \
     --outdir ANALYSIS/results_host \
