@@ -110,11 +110,11 @@ A critical challenge in orthotopic xenografts is the high sequence conservation 
 nextflow run nf-core/rnaseq \
     -r 3.22.2 \
     -profile singularity \
-    --input ANALYSIS/samplesheet.csv \
-    --outdir ANALYSIS/results \
-    --fasta ANALYSIS/refs/human/GRCh38.primary_assembly.genome.fa \
-    --gtf ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf \
-    --bbsplit_fasta_list ANALYSIS/bbsplit.csv \
+    --input "$(pwd)/ANALYSIS/samplesheet.csv" \
+    --outdir "$(pwd)/ANALYSIS/results" \
+    --fasta "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.genome.fa.gz" \
+    --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz" \
+    --bbsplit_fasta_list "$(pwd)/ANALYSIS/bbsplit.csv" \
     --skip_bbsplit false \
     --save_bbsplit_reads \
     --max_cpus 16 \
