@@ -264,20 +264,24 @@ singularity --version
 ## Additional Resources
 
 ### Reference Genomes & Databases
-For alignment and enrichment analysis, the following specific assemblies and databases were used. These must be downloaded locally.
+For alignment and enrichment analysis, the following specific assemblies and databases were used. These must be downloaded locally to `ANALYSIS/refs/`.
 
-**1. Sequence Alignment & Host Removal**
-* **Human Reference (Target):** GRCh38 (GENCODE Release 44)
-    * [Download FASTA (ftp.ebi.ac.uk)](http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_44/GRCh38.primary_assembly.genome.fa.gz)
-* **Rat Reference (Host):** mRatBN7.2 (Ensembl Release 110)
-    * *Note: mRatBN7.2 is preferred over Rnor6.0 due to improved continuity and reduced misassembly.*
-    * [Download FASTA (ftp.ensembl.org)](http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz)
+**1. Human Reference (Target - Tumor)**
+* **Assembly:** GRCh38 (GENCODE Release 44)
+* **Sequence (FASTA):**
+    * [Download (ftp.ebi.ac.uk)](http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_44/GRCh38.primary_assembly.genome.fa.gz)
+* **Annotation (GTF):**
+    * [Download (ftp.ebi.ac.uk)](http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_44/GRCh38.primary_assembly.annotation.gtf.gz)
 
-**2. Quantification & Pathway Analysis**
-* **Gene Annotation (GTF):** GENCODE Release 44
-    * Required for mapping Ensembl IDs to Gene Symbols.
-    * [Download GTF (ftp.ebi.ac.uk)](http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_44/GRCh38.primary_assembly.annotation.gtf.gz)
-* **Pathway Database (GMT):** MSigDB Hallmark Gene Sets (v2023.2)
+**2. Rat Reference (Host - Microenvironment)**
+* **Assembly:** mRatBN7.2 (Ensembl Release 110)
+* **Sequence (FASTA):**
+    * [Download (ftp.ensembl.org)](http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz)
+* **Annotation (GTF):**
+    * [Download (ftp.ensembl.org)](http://ftp.ensembl.org/pub/release-110/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.110.gtf.gz)
+
+**3. Pathway Database**
+* **MSigDB Hallmark Gene Sets (v2023.2):**
     * Required for GSEA to identify biological states (e.g., Hypoxia, EMT).
     * [Download GMT (Broad Institute)](https://data.broadinstitute.org/gsea-msigdb/msigdb/release/2023.2.Hs/h.all.v2023.2.Hs.symbols.gmt)
 
