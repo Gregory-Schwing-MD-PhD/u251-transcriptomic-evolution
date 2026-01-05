@@ -1,3 +1,2 @@
-sample,fasta
-human_ref,ANALYSIS/refs/human/GRCh38.primary_assembly.genome.fa.gz
-rat_ref,ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz
+human_ref,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/human/GRCh38.primary_assembly.genome.fa.gz
+rat_ref,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz
