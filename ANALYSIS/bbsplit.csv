@@ -1,2 +1,3 @@
-human_ref,ANALYSIS/refs/human_GRCh38.fa.gz
-rat_ref,ANALYSIS/refs/rat_mRatBN7.2.fa.gz
+sample,fasta
+human_ref,refs/human/GRCh38.primary_assembly.genome.fa.gz
+rat_ref,refs/rat/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz

@@ -1,0 +1,4 @@
+id,variable,reference,target
+tumor_inflammation,Classification,Control,Primary_U2
+ablation_scarring,Classification,Primary_U2,Recurrent_U2
+total_cumulative_damage,Classification,Control,Recurrent_U2
