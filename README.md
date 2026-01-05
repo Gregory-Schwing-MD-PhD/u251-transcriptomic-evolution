@@ -104,13 +104,6 @@ A critical challenge in orthotopic xenografts is the high sequence conservation 
 2.  **Disambiguation:** Reads mapping best to Rat are segregated; reads mapping best to Human are retained.
 3.  **Quantification:** "Clean" human reads are aligned (STAR) and quantified (Salmon).
 
-```bash
-Here is the completely updated Bioinformatics Workflow section.
-
-I have updated the commands to use the Local Reference Genomes (referencing the files you downloaded to ANALYSIS/refs/) and ensured the advanced resource parameters (--max_cpus 16, --max_memory '64.GB') are included in both RNA-seq steps for consistency.
-
-Markdown
-
 ## Bioinformatics Workflow: The Dual-Species Strategy
 
 To maximize the utility of the orthotopic xenograft model, this project employs a **Dual-Species Workflow**. Raw sequencing reads are computationally sorted into **Human (Tumor)** and **Rat (Host)** streams, creating two parallel experiments from a single dataset.
