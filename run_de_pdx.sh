@@ -21,17 +21,20 @@ export XDG_RUNTIME_DIR="${HOME}/xdr"
 mkdir -p $XDG_RUNTIME_DIR
 
 # 3. The Production Command
-# Note: Syntax fixed (added backslash and corrected resume flag)
 nextflow run nf-core/differentialabundance \
     -r 1.5.0 \
     -profile singularity \
-    --input ANALYSIS/metadata.csv \
-    --contrasts ANALYSIS/contrasts.csv \
-    --matrix ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv \
+    --input "$(pwd)/ANALYSIS/metadata.csv" \
+    --contrasts "$(pwd)/ANALYSIS/contrasts.csv" \
+    --matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv" \
+    --transcript_length_matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_lengths.tsv" \
     --genome GRCh38 \
-    --genesets ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt \
+    --gene_sets_files "$(pwd)/ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt" \
     --study_name "U251_LITT_Evolution" \
-    --outdir ANALYSIS/results_differential \
+    --outdir "$(pwd)/ANALYSIS/results_differential" \
     --shinyngs_build_app \
     --deseq2_min_replicates_for_replace 3 \
+    --gsea_run true \
+    --gprofiler2_run true \
+    --gprofiler2_organism hsapiens \
     -resume
