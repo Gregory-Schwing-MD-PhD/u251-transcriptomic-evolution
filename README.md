@@ -59,9 +59,9 @@ Evidence suggests that the brain microenvironment exerts a dominant influence on
 
 ### 2. Therapy-Driven Evolution (LITT)
 Therapies such as radiation and thermal ablation do not just reduce tumor bulk; they drive selection.
-* **LITT Mechanism:** LITT utilizes a laser fiber to deliver thermal energy, creating a central zone of necrosis ($>60^\circ$C) surrounded by a sublethal thermal penumbra ($43-60^\circ$C).
-* **Penumbra Effects:** Surviving cells in this penumbra experience heat stress, transient blood-brain barrier (BBB) disruption, and hypoxia, likely driving distinct transcriptional states and eventual recurrence.
-* **Model Validation:** The Nagaraja et al. model confirms that while LITT achieves near-complete ablation of the central mass, viable tumor cells persist in the periphery, serving as the seed for recurrence.
+* [cite_start]**LITT Mechanism:** LITT utilizes a laser fiber to deliver thermal energy, creating a central zone of necrosis ($>60^\circ$C) surrounded by a sublethal thermal penumbra ($43-60^\circ$C)[cite: 63, 65, 68].
+* [cite_start]**Penumbra Effects:** Surviving cells in this penumbra experience heat stress, transient blood-brain barrier (BBB) disruption, and hypoxia, likely driving distinct transcriptional states and eventual recurrence[cite: 65, 210, 214].
+* [cite_start]**Model Validation:** The Nagaraja et al. model confirms that while LITT achieves near-complete ablation of the central mass, viable tumor cells persist in the periphery, serving as the seed for recurrence[cite: 210, 235].
 
 ### 3. Primary vs. Recurrent GBM Signatures
 Matched patient datasets provide a template for analyzing recurrence.
@@ -79,21 +79,29 @@ Despite the establishment of LITT as a therapy and U251 as a model, current lite
 1.  **Benchmarks** U251 culture-to-brain adaptation at RNAseq resolution.
 2.  **Profiles** the orthotopic tumor specifically after LITT focal ablation.
 3.  **Longitudinally samples** the recurrence to test for convergence on mesenchymal/stress-tolerant states.
+4.  **Simultaneously profiles** the host microenvironment response (stroma/immune) to distinguish tumor-intrinsic evolution from extrinsic tissue scarring.
 
 This repository houses the analysis and data to address this unmet need, integrating differential gene expression and pathway analysis across all three evolutionary stages.
 
 ---
 
-## Bioinformatics Workflow
+## Bioinformatics Workflow: The Dual-Species Strategy
 
-To ensure reproducibility and rigorous handling of the xenograft model system, this project utilizes a two-phase Nextflow pipeline.
+To maximize the utility of the orthotopic xenograft model, this project employs a **Dual-Species Workflow**. Raw sequencing reads are computationally sorted into **Human (Tumor)** and **Rat (Host)** streams, creating two parallel experiments from a single dataset. 
 
-### Phase 1: Alignment & Xenograft Decontamination
+| Experiment | **1. Tumor Evolution** | **2. Host Microenvironment** |
+| :--- | :--- | :--- |
+| **Target Organism** | Human (U251 Cells) | Rat (Brain Stroma/Microglia) |
+| **Input Data** | Human-mapping reads | Rat-mapping reads (discarded from Exp 1) |
+| **Biological Goal** | Track tumor adaptation & resistance | Track inflammation, gliosis & scarring |
+| **Key Contrast** | Primary vs. Recurrent (Resistance) | Tumor vs. Control (Inflammation) |
+
+### Phase 1: Alignment & Species Sorting
 **Tool:** `nf-core/rnaseq` (v3.22.2)
 
 A critical challenge in orthotopic xenografts is the high sequence conservation between human tumor cells and the rat host brain. To address this, we employ **Competitive Alignment** using [BBSplit](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbsplit-guide/).
 1.  **Dual Indexing:** Reads are mapped simultaneously to a combined reference of **Human (GRCh38)** and **Rat (mRatBN7.2)**.
-2.  **Disambiguation:** Reads mapping best to Rat are discarded; reads mapping best to Human are retained.
+2.  **Disambiguation:** Reads mapping best to Rat are segregated; reads mapping best to Human are retained.
 3.  **Quantification:** "Clean" human reads are aligned (STAR) and quantified (Salmon).
 
 ```bash
@@ -110,14 +118,12 @@ nextflow run nf-core/rnaseq \
     --max_memory '64.GB'
 ```
 
-### Phase 2: Statistical Analysis & Differential Abundance
+### Phase 2A: Tumor Analysis (Human Reads)
 **Tool:** `nf-core/differentialabundance` (v1.5.0)
 
-Raw counts are transformed into biological insights using DESeq2. This phase applies generalized linear modeling to identify genes that are significantly perturbed by the microenvironment or therapeutic stress. Furthermore, it performs **Gene Set Enrichment Analysis (GSEA)** against the MSigDB Hallmark collection to identify coordinated pathway shifts (e.g., Hypoxia, Epithelial Mesenchymal Transition).
+Raw counts are transformed into biological insights using DESeq2. This phase applies generalized linear modeling to identify genes that are significantly perturbed by the microenvironment or therapeutic stress.
 
 **Rationale for Contrasts**
-We explicitly model three distinct evolutionary pressures:
-
 1.  **Brain Adaptation** (*Culture vs. Primary*): Defines the "Engraftment Shock." Identifies genes required to transition from plastic to the brain parenchyma.
 2.  **Therapy Impact** (*Primary vs. Recurrent*): Defines "Resistance." Isolates the specific transcriptomic shifts driven by thermal ablation and recovery.
 3.  **Core Brain Signature** (*In Vitro vs. All In Vivo*): Defines "Invasion." By grouping Primary and Recurrent tumors against Culture, we identify the universal machinery required for U251 survival in the brain, independent of therapy.
@@ -129,13 +135,53 @@ nextflow run nf-core/differentialabundance \
     --input "$(pwd)/ANALYSIS/metadata.csv" \
     --contrasts "$(pwd)/ANALYSIS/contrasts.csv" \
     --matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv" \
+    --transcript_length_matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_lengths.tsv" \
     --genome GRCh38 \
     --genesets "$(pwd)/ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt" \
     --study_name "U251_LITT_Evolution" \
     --outdir "$(pwd)/ANALYSIS/results_differential" \
     --shinyngs_build_app \
     --deseq2_min_replicates_for_replace 3 \
+    -c gsea_fix.config \
     -resume
+```
+
+### Phase 2B: Host Microenvironment Analysis (Rat Reads)
+**Tool:** `nf-core/rnaseq` (Re-run) & `nf-core/differentialabundance`
+
+Reads identified as "Rat" by BBSplit in Phase 1 are not discarded but are re-analyzed to profile the host response. This "inverted" analysis treats the tumor samples as "Inflamed Brain" and the control samples as "Healthy Brain."
+
+**Rationale for Contrasts**
+1.  **Tumor Inflammation** (*Primary Tumor vs. Control Brain*): Identifies microglial activation (*Aif1*), astrogliosis (*Gfap*), and vascular recruitment driven by the tumor presence.
+2.  **Ablation Scarring** (*Recurrent Tumor vs. Primary Tumor*): Differentiates the chronic inflammatory signature of the LITT burn scar from the baseline tumor inflammation.
+
+**Step 1: Re-align Rat Reads**
+```bash
+nextflow run nf-core/rnaseq \
+    -r 3.14.2 \
+    -profile singularity \
+    --input ANALYSIS/samplesheet_host.csv \
+    --outdir ANALYSIS/results_host \
+    --genome mRatBN7.2 \
+    --remove_ribo_rna \
+    --skip_bbsplit \
+    -resume
+```
+
+**Step 2: Differential Abundance (Host)**
+```bash
+nextflow run nf-core/differentialabundance \
+    -r 1.5.0 \
+    -profile singularity \
+    --input "$(pwd)/ANALYSIS/metadata_host.csv" \
+    --contrasts "$(pwd)/ANALYSIS/contrasts_host.csv" \
+    --matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_counts.tsv" \
+    --transcript_length_matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_lengths.tsv" \
+    --genome mRatBN7.2 \
+    --study_name "U251_Host_Response" \
+    --outdir "$(pwd)/ANALYSIS/results_host_differential" \
+    --shinyngs_build_app \
+    --deseq2_min_replicates_for_replace 3
 ```
 
 ## 🛠 Software Requirements & Installation
