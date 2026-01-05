@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=16G
+#SBATCH --mem=64G
 #SBATCH --time=7-00:00:00
 #SBATCH --mail-user=go2432@wayne.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
