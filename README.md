@@ -265,9 +265,10 @@ For alignment and enrichment analysis, the following specific assemblies and dat
 * **Rat Hallmarks (Generated):**
     * *Note:* There is no official Rat GMT. The file `r.hallmark.v2023.2.Rn.symbols.gmt` must be generated locally using the R package `msigdbr` to map Human Hallmarks to Rat orthologs.
 * **Brain.GMT (Tissue-Specific):**
-    * A curated database of brain-related functional gene sets (e.g., Glioblastoma signaling, Microglial activation, Astrocyte polarization) not found in standard MSigDB.
-    * *Source:* Pusarla et al., 2024 ("A Curated Database of Brain-Related Functional Gene Sets").
-    * [Access Database / Paper](https://pubmed.ncbi.nlm.nih.gov/39049932/)
+    * A curated database of brain-related functional gene sets (e.g., Glioblastoma signaling, Microglial activation, Astrocyte polarization).
+    * *Paper:* Hagenauer et al., 2024 ("A Curated Database of Brain-Related Functional Gene Sets") - [ScienceDirect Link](https://www.sciencedirect.com/science/article/pii/S2215016124002413)
+    * **Rat Version (Host):** [Download BrainGMTv2_RatOrthologs.gmt.txt](https://raw.githubusercontent.com/hagenaue/Brain_GMT/main/BrainGMTv2_RatOrthologs.gmt.txt)
+    * **Human Version (Tumor):** [Download BrainGMTv2_HumanOrthologs.gmt.txt](https://raw.githubusercontent.com/hagenaue/Brain_GMT/main/BrainGMTv2_HumanOrthologs.gmt.txt)
 
 ### Tools & Documentation
 * [nf-core/rnaseq Documentation](https://nf-co.re/rnaseq)
