@@ -267,7 +267,7 @@ For alignment and enrichment analysis, the following specific assemblies and dat
 * **Brain.GMT (Tissue-Specific):**
     * A curated database of brain-related functional gene sets (e.g., Glioblastoma signaling, Microglial activation, Astrocyte polarization) not found in standard MSigDB.
     * *Source:* Pusarla et al., 2024 ("A Curated Database of Brain-Related Functional Gene Sets").
-    * [Access Database / Paper](https://doi.org/10.1093/database/baae005)
+    * [Access Database / Paper](https://doi.org/10.1016/j.mex.2024.102788)
 
 ### Tools & Documentation
 * [nf-core/rnaseq Documentation](https://nf-co.re/rnaseq)
