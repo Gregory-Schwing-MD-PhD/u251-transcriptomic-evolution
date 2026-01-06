@@ -2,9 +2,9 @@
 set -e  # Exit immediately if a command exits with a non-zero status.
 
 # ==============================================================================
-# SCRIPT: setup_refs.sh (Permission-Proof Version)
+# SCRIPT: setup_refs.sh (Final Manuscript Version)
 # CONTEXT: Run this script INSIDE the 'ANALYSIS' directory.
-#          It will create ./refs/human, ./refs/rat, etc.
+#          It creates ./refs/human, ./refs/rat, and merges specific gene sets.
 # ==============================================================================
 
 # 1. Capture the Absolute Root (Current Directory = ANALYSIS)
@@ -118,73 +118,98 @@ else
 fi
 
 # ==============================================================================
-# SECTION 3: PATHWAY DATABASES
+# SECTION 3: PATHWAY DATABASES (Auto-Clean & Merge)
 # ==============================================================================
 echo -e "\n[3/3] Processing Pathway Databases..."
 cd "$PATHWAY_DIR" || exit 1
 
+# --- Define Filenames ---
+HUMAN_HALLMARK="h.all.v2023.2.Hs.symbols.gmt"
+HUMAN_C2="c2.all.v2023.2.Hs.symbols.gmt"
+HUMAN_BRAIN="BrainGMTv2_HumanOrthologs.gmt.txt"
+HUMAN_COMBINED="combined_human.gmt"
+
+# Note: This file will contain generated Hallmark AND GO:BP for Rat
+RAT_GENERATED="r.hallmark_and_gobp.v2023.2.Rn.symbols.gmt"
+RAT_BRAIN="BrainGMTv2_RatOrthologs.gmt.txt"
+RAT_COMBINED="combined_rat.gmt"
+
 # 3A. Human Hallmarks (MSigDB)
-FILE="h.all.v2023.2.Hs.symbols.gmt"
-if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-    echo "  [SKIP] $FILE exists."
+if [ -f "$HUMAN_HALLMARK" ] && [ -s "$HUMAN_HALLMARK" ]; then
+    echo "  [SKIP] Human Hallmark exists."
 else
-    echo "  [DOWN] Downloading $FILE..."
-    wget --no-check-certificate -O "$FILE" "https://data.broadinstitute.org/gsea-msigdb/msigdb/release/2023.2.Hs/h.all.v2023.2.Hs.symbols.gmt"
+    echo "  [DOWN] Downloading Human Hallmark..."
+    wget --no-check-certificate -O "$HUMAN_HALLMARK" "https://data.broadinstitute.org/gsea-msigdb/msigdb/release/2023.2.Hs/h.all.v2023.2.Hs.symbols.gmt"
 fi
 
-# 3B. Brain.GMT (GitHub)
-# Human
-FILE="BrainGMTv2_HumanOrthologs.gmt.txt"
-if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-    echo "  [SKIP] $FILE exists."
+# 3B. Human C2 Curated (GBM Subtypes + Reactome)
+if [ -f "$HUMAN_C2" ] && [ -s "$HUMAN_C2" ]; then
+    echo "  [SKIP] Human C2 (Curated) exists."
 else
-    echo "  [DOWN] Downloading $FILE..."
-    wget --no-check-certificate -O "$FILE" "https://raw.githubusercontent.com/hagenaue/Brain_GMT/main/BrainGMTv2_HumanOrthologs.gmt.txt"
+    echo "  [DOWN] Downloading Human C2 (Curated)..."
+    wget --no-check-certificate -O "$HUMAN_C2" "https://data.broadinstitute.org/gsea-msigdb/msigdb/release/2023.2.Hs/c2.all.v2023.2.Hs.symbols.gmt"
 fi
 
-# Rat
-FILE="BrainGMTv2_RatOrthologs.gmt.txt"
-if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-    echo "  [SKIP] $FILE exists."
+# 3C. Brain.GMT (GitHub) - Human
+if [ -f "$HUMAN_BRAIN" ] && [ -s "$HUMAN_BRAIN" ]; then
+    echo "  [SKIP] Human BrainGMT exists."
 else
-    echo "  [DOWN] Downloading $FILE..."
-    wget --no-check-certificate -O "$FILE" "https://raw.githubusercontent.com/hagenaue/Brain_GMT/main/BrainGMTv2_RatOrthologs.gmt.txt"
+    echo "  [DOWN] Downloading Human BrainGMT..."
+    wget --no-check-certificate -O "$HUMAN_BRAIN" "https://raw.githubusercontent.com/hagenaue/Brain_GMT/main/BrainGMTv2_HumanOrthologs.gmt.txt"
 fi
 
-# 3C. Generate Rat Hallmarks (R Script)
-FILE="r.hallmark.v2023.2.Rn.symbols.gmt"
-if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-    echo "  [SKIP] Rat Hallmarks ($FILE) already generated."
+# 3D. Brain.GMT (GitHub) - Rat
+if [ -f "$RAT_BRAIN" ] && [ -s "$RAT_BRAIN" ]; then
+    echo "  [SKIP] Rat BrainGMT exists."
 else
-    echo "  [GEN]  Generating Rat Hallmarks via R (msigdbr)..."
+    echo "  [DOWN] Downloading Rat BrainGMT..."
+    wget --no-check-certificate -O "$RAT_BRAIN" "https://raw.githubusercontent.com/hagenaue/Brain_GMT/main/BrainGMTv2_RatOrthologs.gmt.txt"
+fi
+
+# 3E. CLEANING STEP (Critical for BrainGMT)
+echo "  [CLEAN] Sanitizing BrainGMT files (removing Windows line endings and trailing tabs)..."
+sed -i 's/[ \t\r]*$//' "$HUMAN_BRAIN"
+sed -i 's/[ \t\r]*$//' "$RAT_BRAIN"
+
+# 3F. Generate Rat Gene Sets (Hallmark + GO:BP) via R
+if [ -f "$RAT_GENERATED" ] && [ -s "$RAT_GENERATED" ]; then
+    echo "  [SKIP] Rat Generated Sets (Hallmark + GO:BP) already exist."
+else
+    echo "  [GEN]  Generating Rat Sets via R (msigdbr)..."
     if ! command -v Rscript &> /dev/null; then
         echo "     [WARNING] Rscript not found. Skipping generation."
     else
-        # Define local library path for R
         export R_LIBS_USER="$RLIB_DIR"
-        
         cat <<EOF > generate_rat_gmt.R
-        # Ensure the local library dir exists
         lib_dir <- "$RLIB_DIR"
         if (!dir.exists(lib_dir)) dir.create(lib_dir, recursive = TRUE)
         .libPaths(c(lib_dir, .libPaths()))
         
-        # Install msigdbr if missing
+        # Install msigdbr
         if (!require("msigdbr", quietly = TRUE)) {
             if (!require("BiocManager", quietly = TRUE)) {
                 install.packages("BiocManager", repos="http://cran.us.r-project.org", lib=lib_dir)
             }
             BiocManager::install("msigdbr", update=FALSE, ask=FALSE, lib=lib_dir)
         }
-        
         library(msigdbr)
-        rat_hallmarks <- msigdbr(species = "Rattus norvegicus", category = "H")
-        rat_list <- split(x = rat_hallmarks\$gene_symbol, f = rat_hallmarks\$gs_name)
         
-        file_conn <- file("$FILE", "w")
-        for (pathway in names(rat_list)) {
-            genes <- rat_list[[pathway]]
-            line <- paste(c(pathway, paste0("https://www.gsea-msigdb.org/gsea/msigdb/cards/", pathway), genes), collapse = "\t")
+        # 1. Hallmark (H) - General Inflammation
+        rat_hallmarks <- msigdbr(species = "Rattus norvegicus", category = "H")
+        rat_list_H <- split(x = rat_hallmarks\$gene_symbol, f = rat_hallmarks\$gs_name)
+        
+        # 2. GO Biological Process (C5:BP) - Specific Scarring/Wound Healing
+        rat_gobp <- msigdbr(species = "Rattus norvegicus", category = "C5", subcategory = "GO:BP")
+        rat_list_BP <- split(x = rat_gobp\$gene_symbol, f = rat_gobp\$gs_name)
+        
+        # 3. Combine
+        rat_full_list <- c(rat_list_H, rat_list_BP)
+        
+        # 4. Write
+        file_conn <- file("$RAT_GENERATED", "w")
+        for (pathway in names(rat_full_list)) {
+            genes <- rat_full_list[[pathway]]
+            line <- paste(c(pathway, "http://www.gsea-msigdb.org/gsea/msigdb/cards/", genes), collapse = "\t")
             writeLines(line, file_conn)
         }
         close(file_conn)
@@ -194,7 +219,23 @@ EOF
     fi
 fi
 
+# 3G. MERGE STEP
+echo "  [MERGE] Concatenating Gene Sets..."
+
+# Merge Human (Hallmark + C2/Curated + Brain)
+cat "$HUMAN_HALLMARK" "$HUMAN_C2" "$HUMAN_BRAIN" > "$HUMAN_COMBINED"
+echo "     -> Created $HUMAN_COMBINED (Hallmark + C2 + BrainGMT)"
+
+# Merge Rat (Hallmark/GO:BP + Brain)
+if [ -f "$RAT_GENERATED" ]; then
+    cat "$RAT_GENERATED" "$RAT_BRAIN" > "$RAT_COMBINED"
+    echo "     -> Created $RAT_COMBINED (Hallmark + GO:BP + BrainGMT)"
+else
+    echo "     [WARN] Rat Generated Sets missing. Skipping Rat merge."
+fi
+
 echo "========================================================"
 echo "Setup Complete!"
-echo "References located at: $BASE_DIR"
+echo "Combined Human GMT: $PATHWAY_DIR/$HUMAN_COMBINED"
+echo "Combined Rat GMT:   $PATHWAY_DIR/$RAT_COMBINED"
 echo "========================================================"
