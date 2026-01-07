@@ -141,9 +141,10 @@ nextflow run nf-core/differentialabundance \
     --matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv" \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_lengths.tsv" \
     --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf" \
-    --gsea_run true \
-    --genesets "$(pwd)/ANALYSIS/refs/human_combined.gmt" \
-    --gprofiler2_run true \
+    --gsea_run \
+    --gsea_gene_sets "$(pwd)/ANALYSIS/refs/human_combined.gmt" \
+    --gsea_rnd_seed '1234' \
+    --gprofiler2_run \
     --gprofiler2_organism hsapiens \
     --study_name "U251_LITT_Evolution" \
     --outdir "$(pwd)/ANALYSIS/results_differential" \
@@ -165,23 +166,17 @@ Reads identified as "Rat" by BBSplit in Phase 1 are not discarded but are re-ana
 *Note: We map the discarded reads to the local Rat reference (`mRatBN7.2`) using the same resource constraints as the primary analysis.*
 
 ```bash
-nextflow run nf-core/differentialabundance \
-    -r 1.5.0 \
+nextflow run nf-core/rnaseq \
+    -r 3.22.2 \
     -profile singularity \
-    --input "$(pwd)/ANALYSIS/metadata_host.csv" \
-    --contrasts "$(pwd)/ANALYSIS/contrasts_host.csv" \
-    --matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_counts.tsv" \
-    --transcript_length_matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_lengths.tsv" \
-    --gtf "$(pwd)/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf" \
-    --gsea_run true \
-    --genesets "$(pwd)/ANALYSIS/refs/rat_combined.gmt" \
-    --gprofiler2_run true \
-    --gprofiler2_organism rnorvegicus \
-    --study_name "U251_Host_Response" \
-    --outdir "$(pwd)/ANALYSIS/results_host_differential" \
-    --shinyngs_build_app \
-    --deseq2_min_replicates_for_replace 3 \
-    -c gsea_fix.config
+    --input "$(pwd)/ANALYSIS/samplesheet_host_filtered.csv" \
+    --outdir "$(pwd)/ANALYSIS/results_host" \
+    --fasta "$(pwd)/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz" \
+    --gtf "$(pwd)/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf.gz" \
+    --remove_ribo_rna \
+    --skip_bbsplit true \
+    --max_cpus 16 \
+    --max_memory '62.GB'
 ```
 
 **Step 2: Differential Abundance (Host)**
@@ -196,12 +191,16 @@ nextflow run nf-core/differentialabundance \
     --matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_counts.tsv" \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_lengths.tsv" \
     --gtf "$(pwd)/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf" \
-    --genesets "$(pwd)/ANALYSIS/refs/rat_combined.gmt" \
+    --gsea_run \
+    --gsea_gene_sets "$(pwd)/ANALYSIS/refs/rat_combined.gmt" \
+    --gsea_rnd_seed '1234' \
+    --gprofiler2_run \
+    --gprofiler2_organism rnorvegicus \
     --study_name "U251_Host_Response" \
     --outdir "$(pwd)/ANALYSIS/results_host_differential" \
     --shinyngs_build_app \
     --deseq2_min_replicates_for_replace 3 \
-    -resume
+    -c gsea_fix.config
 ```
 
 ## 🛠 Software Requirements & Installation
