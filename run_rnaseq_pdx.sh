@@ -34,5 +34,5 @@ nextflow run nf-core/rnaseq \
     --skip_bbsplit false \
     --save_bbsplit_reads \
     --max_cpus 16 \
-    --max_memory '64.GB' \
-    -resume
+    --max_memory '64.GB' #\
+#    -resume

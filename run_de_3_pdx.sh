@@ -24,12 +24,11 @@ mkdir -p $XDG_RUNTIME_DIR
 nextflow run nf-core/differentialabundance \
     -r 1.5.0 \
     -profile singularity \
-    --input "$(pwd)/ANALYSIS/metadata_therapy.csv" \
-    --contrasts "$(pwd)/ANALYSIS/contrasts_therapy.csv" \
+    --input "$(pwd)/ANALYSIS/metadata_evolution.csv" \
+    --contrasts "$(pwd)/ANALYSIS/contrasts_evolution.csv" \
     --matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv" \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_lengths.tsv" \
-    --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz" \
     --exploratory_main_variable Classification \
     --shinyngs_build_app \
-    -c therapy.config \
+    -c environment.config \
     -resume
