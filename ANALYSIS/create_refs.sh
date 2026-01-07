@@ -219,19 +219,30 @@ EOF
     fi
 fi
 
-# 3G. MERGE STEP
-echo "  [MERGE] Concatenating Gene Sets..."
+# 3G. MERGE STEP (With Duplicate Removal)
+echo "  [MERGE] Concatenating Gene Sets and removing duplicates..."
 
-# Merge Human (Hallmark + C2/Curated + Brain)
-cat "$HUMAN_HALLMARK" "$HUMAN_C2" "$HUMAN_BRAIN" > "$HUMAN_COMBINED"
-echo "     -> Created $HUMAN_COMBINED (Hallmark + C2 + BrainGMT)"
+# --- Human Merge ---
+# Priority: Hallmark > BrainGMT > C2 (awk keeps the first instance it finds)
+cat "$HUMAN_HALLMARK" "$HUMAN_BRAIN" "$HUMAN_C2" > "$HUMAN_COMBINED.tmp"
+awk '!seen[$1]++' "$HUMAN_COMBINED.tmp" > "$HUMAN_COMBINED"
+rm "$HUMAN_COMBINED.tmp"
 
-# Merge Rat (Hallmark/GO:BP + Brain)
+# Count unique sets for the log
+HUMAN_COUNT=$(wc -l < "$HUMAN_COMBINED")
+echo "      -> Created $HUMAN_COMBINED ($HUMAN_COUNT unique sets)"
+
+# --- Rat Merge ---
+# Priority: Hallmark/GOBP > BrainGMT
 if [ -f "$RAT_GENERATED" ]; then
-    cat "$RAT_GENERATED" "$RAT_BRAIN" > "$RAT_COMBINED"
-    echo "     -> Created $RAT_COMBINED (Hallmark + GO:BP + BrainGMT)"
+    cat "$RAT_GENERATED" "$RAT_BRAIN" > "$RAT_COMBINED.tmp"
+    awk '!seen[$1]++' "$RAT_COMBINED.tmp" > "$RAT_COMBINED"
+    rm "$RAT_COMBINED.tmp"
+    
+    RAT_COUNT=$(wc -l < "$RAT_COMBINED")
+    echo "      -> Created $RAT_COMBINED ($RAT_COUNT unique sets)"
 else
-    echo "     [WARN] Rat Generated Sets missing. Skipping Rat merge."
+    echo "      [WARN] Rat Generated Sets missing. Skipping Rat merge."
 fi
 
 echo "========================================================"
