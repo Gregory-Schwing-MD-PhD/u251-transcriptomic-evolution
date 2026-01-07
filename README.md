@@ -141,7 +141,7 @@ nextflow run nf-core/differentialabundance \
     --matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_counts.tsv" \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results/star_salmon/salmon.merged.gene_lengths.tsv" \
     --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf" \
-    --genesets "$(pwd)/ANALYSIS/refs/h.all.v2023.2.Hs.symbols.gmt" \
+    --genesets "$(pwd)/ANALYSIS/refs/human_combined.gmt" \
     --study_name "U251_LITT_Evolution" \
     --outdir "$(pwd)/ANALYSIS/results_differential" \
     --shinyngs_build_app \
@@ -189,11 +189,12 @@ nextflow run nf-core/differentialabundance \
     --matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_counts.tsv" \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results_host/star_salmon/salmon.merged.gene_lengths.tsv" \
     --gtf "$(pwd)/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf" \
-    --genesets "$(pwd)/ANALYSIS/refs/r.hallmark.v2023.2.Rn.symbols.gmt" \
+    --genesets "$(pwd)/ANALYSIS/refs/rat_combined.gmt" \
     --study_name "U251_Host_Response" \
     --outdir "$(pwd)/ANALYSIS/results_host_differential" \
     --shinyngs_build_app \
-    --deseq2_min_replicates_for_replace 3
+    --deseq2_min_replicates_for_replace 3 \
+    -resume
 ```
 
 ## 🛠 Software Requirements & Installation
