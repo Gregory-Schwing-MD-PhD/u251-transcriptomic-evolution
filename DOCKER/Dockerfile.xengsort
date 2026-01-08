@@ -15,7 +15,7 @@ RUN micromamba shell init --shell bash --prefix /opt/conda
 # This is the "magic" that makes Singularity see the conda environment
 ENV BASH_ENV=/root/.bashrc
 ENV PATH="/opt/conda/bin:$PATH"
-
+ENV MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /data
 
 USER $MAMBA_USER
