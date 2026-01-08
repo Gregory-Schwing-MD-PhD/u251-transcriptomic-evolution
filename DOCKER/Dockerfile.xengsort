@@ -8,17 +8,17 @@ RUN micromamba install -y -n base \
     "python>=3.12,<3.13" xengsort=2.1.0 multiqc=1.21 procps-ng \
     && micromamba clean --all --yes
 
-# 2. Initialize micromamba so it writes to .bashrc
-RUN micromamba shell init --shell bash --prefix /opt/conda
+# 2. Initialize micromamba (Corrected syntax)
+RUN micromamba shell init --shell bash
 
 # 3. Force non-interactive shells to source the bashrc
-# This is the "magic" that makes Singularity see the conda environment
 ENV BASH_ENV=/root/.bashrc
 ENV PATH="/opt/conda/bin:$PATH"
-ENV MAMBA_DOCKERFILE_ACTIVATE=1
-WORKDIR /data
 
+# 4. Ensure activation for Docker and Singularity
+ENV MAMBA_DOCKERFILE_ACTIVATE=1
+
+WORKDIR /data
 USER $MAMBA_USER
 
-# Default command
 CMD ["/bin/bash"]
