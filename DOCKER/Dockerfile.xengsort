@@ -1,0 +1,19 @@
+FROM mambaorg/micromamba:latest
+
+USER root
+
+# 1. Install tools into the base environment
+RUN micromamba install -y -n base \
+    -c bioconda -c conda-forge -c defaults \
+    "python>=3.12,<3.13" xengsort=2.1.0 multiqc=1.33 2>&1 \
+    && micromamba clean --all --yes
+
+# 2. This is the only line needed to auto-activate the base environment
+ENV MAMBA_DOCKERFILE_ACTIVATE=1
+
+WORKDIR /data
+
+# Switch back to the mamba user
+USER $MAMBA_USER
+
+CMD ["/bin/bash"]
