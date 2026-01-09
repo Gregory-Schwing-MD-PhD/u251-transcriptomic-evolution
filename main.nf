@@ -5,48 +5,44 @@ workflow {
         .splitCsv(header:true)
         .map { row -> [ row.sample, [file(row.fastq_1), file(row.fastq_2)] ] }
 
+    // Pass the fasta files from params into the INDEX process
     INDEX( file(params.host_fasta), file(params.graft_fasta) )
-    CLASSIFY( ch_input, INDEX.out.collect() )
-    MULTIQC( CLASSIFY.out.logs.collect() )
+    SORT_READS( ch_input, INDEX.out.collect() )
 }
 
 process INDEX {
     storeDir "ANALYSIS/xengsort_index"
-
+    cpus 16
+    memory '80 GB'
+    
     input:
     path host
     path graft
 
     output:
-    path "index*"
+    path "index*", emit: index_files
 
-    script:
+    script: 
     """
-    xengsort index \
-        -k 25 \
-        -n 4500000000 \
-        --index index \
-        --host $host \
-        --graft $graft
+    xengsort index -k 29 -n 4500000000 --subtables 15 --fill 0.85 --index index --host $host --graft $graft --weakthreads ${task.cpus}
     """
 }
 
-process CLASSIFY {
+process SORT_READS {
     tag "${sample_id}"
-    publishDir "${params.outdir}/fastqs", mode: 'copy', pattern: "*.fq.gz"
-    publishDir "${params.outdir}/logs", mode: 'copy', pattern: "*.log"
+    publishDir "${params.outdir}/sorted_fastqs", mode: 'copy'
+    cpus 8
+    memory '32 GB'
 
     input:
     tuple val(sample_id), path(reads)
     path index_files
 
-    output: 
-    path "${sample_id}_human_plus_ambig.fq.gz", emit: h_ambig
-    path "${sample_id}_rat_plus_ambig.fq.gz",   emit: r_ambig
-    path "${sample_id}_human_pure.fq.gz",       emit: h_pure
-    path "${sample_id}_rat_pure.fq.gz",         emit: r_pure
-    path "${sample_id}_ambig_only.fq.gz",       emit: ambig_only
-    path "${sample_id}.xengsort.log",           emit: logs
+    output:
+    path "${sample_id}_human_R1.fq.gz", emit: human_r1
+    path "${sample_id}_human_R2.fq.gz", emit: human_r2
+    path "${sample_id}_rat_R1.fq.gz",   emit: rat_r1
+    path "${sample_id}_rat_R2.fq.gz",   emit: rat_r2
 
     script:
     """
@@ -54,20 +50,19 @@ process CLASSIFY {
         --index index \
         --fastq ${reads[0]} \
         --pairs ${reads[1]} \
-        --filter graft \
-        --out-graft ${sample_id}_human_pure.fq.gz \
-        --out-host ${sample_id}_rat_pure.fq.gz \
-        --out-ambiguous ${sample_id}_ambig_only.fq.gz \
-        --prefix ${sample_id}_ > ${sample_id}.xengsort.log 2>&1
+        --mode coverage \
+        --out ${sample_id}_ \
+        --prefix ${sample_id}_ \
+        -T ${task.cpus}
 
-    cat ${sample_id}_human_pure.fq.gz ${sample_id}_ambig_only.fq.gz > ${sample_id}_human_plus_ambig.fq.gz
-    cat ${sample_id}_rat_pure.fq.gz ${sample_id}_ambig_only.fq.gz > ${sample_id}_rat_plus_ambig.fq.gz
+    # Human Paired Files (Graft + Ambiguous)
+    cat ${sample_id}_graft_1.fastq.gz ${sample_id}_ambig_1.fastq.gz > ${sample_id}_human_R1.fq.gz
+    cat ${sample_id}_graft_2.fastq.gz ${sample_id}_ambig_2.fastq.gz > ${sample_id}_human_R2.fq.gz
+
+    # Rat Paired Files (Host + Ambiguous)
+    cat ${sample_id}_host_1.fastq.gz ${sample_id}_ambig_1.fastq.gz > ${sample_id}_rat_R1.fq.gz
+    cat ${sample_id}_host_2.fastq.gz ${sample_id}_ambig_2.fastq.gz > ${sample_id}_rat_R2.fq.gz
+
+    rm -f ${sample_id}_*.fastq.gz
     """
-}
-
-process MULTIQC {
-    publishDir "${params.outdir}/reports", mode: 'copy'
-    input:  path xeng_logs
-    output: path "multiqc_report.html"
-    script: "multiqc . --title 'Xengsort Deconvolution Report' --filename 'multiqc_report.html'"
 }
