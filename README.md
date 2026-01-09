@@ -59,9 +59,13 @@ Evidence suggests that the brain microenvironment exerts a dominant influence on
 
 ### 2. Therapy-Driven Evolution (LITT)
 Therapies such as radiation and thermal ablation do not just reduce tumor bulk; they drive selection.
-* [cite_start]**LITT Mechanism:** LITT utilizes a laser fiber to deliver thermal energy, creating a central zone of necrosis ($>60^\circ$C) surrounded by a sublethal thermal penumbra ($43-60^\circ$C)[cite: 63, 65, 68].
-* [cite_start]**Penumbra Effects:** Surviving cells in this penumbra experience heat stress, transient blood-brain barrier (BBB) disruption, and hypoxia, likely driving distinct transcriptional states and eventual recurrence[cite: 65, 210, 214].
-* [cite_start]**Model Validation:** The Nagaraja et al. model confirms that while LITT achieves near-complete ablation of the central mass, viable tumor cells persist in the periphery, serving as the seed for recurrence[cite: 210, 235].
+
+* **LITT Mechanism:** LITT utilizes a laser fiber to deliver thermal energy, creating a central zone of necrosis (>60°C) surrounded by a sublethal thermal penumbra (43-60°C).
+    * [Mohammadi & Schroeder, 2014](https://pubmed.ncbi.nlm.nih.gov/24471476/)
+* **Penumbra Effects:** Surviving cells in this penumbra experience heat stress, transient blood-brain barrier (BBB) disruption, and hypoxia, likely driving distinct transcriptional states and eventual recurrence.
+    * [Nagaraja et al., 2023](https://www.cureus.com/articles/135901-persistent-peri-ablation-blood-brain-barrier-opening-after-laser-interstitial-thermal-therapy-for-brain-tumors#!/)
+* **Model Validation:** The Nagaraja et al. model confirms that while LITT achieves near-complete ablation of the central mass, viable tumor cells persist in the periphery, serving as the seed for recurrence.
+    * [Nagaraja et al., 2021](https://pmc.ncbi.nlm.nih.gov/articles/PMC8893160/)
 
 ### 3. Primary vs. Recurrent GBM Signatures
 Matched patient datasets provide a template for analyzing recurrence.
