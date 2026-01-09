@@ -55,7 +55,7 @@ Evidence suggests that the brain microenvironment exerts a dominant influence on
 * **Clinical Relevance:** Orthotopic xenografts cluster closely with patient GBM samples, recapitulating hypoxia and invasion signatures that subcutaneous models fail to capture.
 
 **Key Reference:**
-* *Influence of in vivo growth on human glioma cell line gene expression* (De Witt Hamer et al., 2005) - [PNAS Full Text](https://www.pnas.org/doi/10.1073/pnas.0502887102).
+* *Influence of in vivo growth on human glioma cell line gene expression* (Camphausen et al., 2005) - [PNAS Full Text](https://www.pnas.org/doi/10.1073/pnas.0502887102).
 
 ### 2. Therapy-Driven Evolution (LITT)
 Therapies such as radiation and thermal ablation do not just reduce tumor bulk; they drive selection.
