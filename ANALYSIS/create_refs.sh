@@ -91,12 +91,12 @@ fi
 echo -e "\n[2/3] Processing Rat Reference (mRatBN7.2 - Ensembl v110)..."
 cd "$RAT_DIR" || exit 1
 
-# URLs
-RAT_FASTA_URL="http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz"
+# URLs - UPDATED TO PRIMARY ASSEMBLY
+RAT_FASTA_URL="http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz"
 RAT_GTF_URL="http://ftp.ensembl.org/pub/release-110/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.110.gtf.gz"
 
 # 1. Process FASTA
-FILE="Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz"
+FILE="Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz"
 if [ -f "$FILE" ] && check_gzip "$FILE"; then
     echo "  [SKIP] $FILE exists and GZIP integrity OK."
 else
@@ -184,7 +184,7 @@ else
         lib_dir <- "$RLIB_DIR"
         if (!dir.exists(lib_dir)) dir.create(lib_dir, recursive = TRUE)
         .libPaths(c(lib_dir, .libPaths()))
-        
+
         # Install msigdbr
         if (!require("msigdbr", quietly = TRUE)) {
             if (!require("BiocManager", quietly = TRUE)) {
@@ -193,18 +193,18 @@ else
             BiocManager::install("msigdbr", update=FALSE, ask=FALSE, lib=lib_dir)
         }
         library(msigdbr)
-        
+
         # 1. Hallmark (H) - General Inflammation
         rat_hallmarks <- msigdbr(species = "Rattus norvegicus", category = "H")
         rat_list_H <- split(x = rat_hallmarks\$gene_symbol, f = rat_hallmarks\$gs_name)
-        
+
         # 2. GO Biological Process (C5:BP) - Specific Scarring/Wound Healing
         rat_gobp <- msigdbr(species = "Rattus norvegicus", category = "C5", subcategory = "GO:BP")
         rat_list_BP <- split(x = rat_gobp\$gene_symbol, f = rat_gobp\$gs_name)
-        
+
         # 3. Combine
         rat_full_list <- c(rat_list_H, rat_list_BP)
-        
+
         # 4. Write
         file_conn <- file("$RAT_GENERATED", "w")
         for (pathway in names(rat_full_list)) {
@@ -238,7 +238,7 @@ if [ -f "$RAT_GENERATED" ]; then
     cat "$RAT_GENERATED" "$RAT_BRAIN" > "$RAT_COMBINED.tmp"
     awk '!seen[$1]++' "$RAT_COMBINED.tmp" > "$RAT_COMBINED"
     rm "$RAT_COMBINED.tmp"
-    
+
     RAT_COUNT=$(wc -l < "$RAT_COMBINED")
     echo "      -> Created $RAT_COMBINED ($RAT_COUNT unique sets)"
 else
