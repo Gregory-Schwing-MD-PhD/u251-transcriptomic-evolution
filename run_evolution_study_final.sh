@@ -16,15 +16,12 @@ set -x
 # ==========================================
 # 1. ENVIRONMENT SETUP
 # ==========================================
-echo "LOG: Setting PATH directly (Avoiding conda activate hang)..."
+echo "LOG: Setting PATH directly..."
 export CONDA_PREFIX="${HOME}/mambaforge/envs/nextflow"
 export PATH="${CONDA_PREFIX}/bin:$PATH"
-
-# Crucial: Unset JAVA_HOME so it defaults to the java in the path we just set
 unset JAVA_HOME
 
 echo "LOG: Verifying Nextflow..."
-which nextflow
 nextflow -v
 
 # ==========================================
@@ -34,7 +31,6 @@ export XDG_RUNTIME_DIR="${HOME}/xdr"
 export NXF_SINGULARITY_CACHEDIR="${HOME}/singularity_cache"
 mkdir -p $XDG_RUNTIME_DIR $NXF_SINGULARITY_CACHEDIR
 
-# Use SCRATCH for intermediate files
 WORK_DIR="$(pwd)/work"
 
 # ==========================================
@@ -66,19 +62,10 @@ unset NXF_PARAMS
 # --- STEP 2: RNA-SEQ (Quantification & QC) ---
 echo "RUNNING STEP 2: RNA-SEQ"
 nextflow run nf-core/rnaseq \
-    -r 3.14.0 \
+    -r 3.22.2 \
     -profile singularity \
     -c rnaseq_custom.config \
-    --input "$(pwd)/ANALYSIS/human_evolution_paired.csv" \
-    --outdir "$(pwd)/ANALYSIS/results_human_final" \
-    --fasta "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.genome.fa.gz" \
-    --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz" \
-    --skip_bbsplit true \
-    --save_unaligned \
-    --aligner star_salmon \
-    --featurecounts_group_type 'gene_type' \
-    --max_cpus 16 \
-    --max_memory '250.GB' \
+    -params-file rnaseq_params.yaml \
     -w "${WORK_DIR}" \
     -resume \
     -ansi-log false
@@ -97,7 +84,57 @@ nextflow run nf-core/differentialabundance \
     --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz" \
     --exploratory_main_variable Classification \
     --shinyngs_build_app \
+    --outdir "ANALYSIS/results_therapy" \
     -params-file therapy_params.yaml \
     -w "${WORK_DIR}" \
     -resume \
     -ansi-log false
+
+unset NXF_PARAMS
+
+# --- STEP 4: VISUALIZATION (THE KITCHEN SINK) ---
+echo "RUNNING STEP 4: GENERATING PUBLICATION PLOTS"
+
+# Container for R Plots
+CONTAINER="docker://quay.io/biocontainers/bioconductor-clusterprofiler:4.10.0--r43hdfd78af_0"
+singularity pull --name enrichment.img $CONTAINER
+
+# Inputs
+DESEQ_FILE="ANALYSIS/results_therapy/tables/differential/therapy_impact.deseq2.results.tsv"
+GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
+OUTPUT_PREFIX="ANALYSIS/results_therapy/plots/U251_Publication"
+COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
+
+# Verification
+if [[ ! -f "$DESEQ_FILE" ]]; then
+    echo "ERROR: DESeq2 results file not found at: $DESEQ_FILE"
+    exit 1
+fi
+if [[ ! -f "$COUNTS_FILE" ]]; then
+    echo "ERROR: Counts file (dictionary) not found at: $COUNTS_FILE"
+    exit 1
+fi
+
+# Execute R script with ALL 4 ARGUMENTS
+singularity exec enrichment.img Rscript plot_kitchen_sink.R \
+    "$DESEQ_FILE" \
+    "$GMT_FILE" \
+    "$OUTPUT_PREFIX" \
+    "$COUNTS_FILE"
+
+echo "DONE. Visualizations saved to: ANALYSIS/results_therapy/plots/"
+
+# --- STEP 5: GENERATE FINAL MULTIQC REPORT ---
+echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
+
+# FIX: Switched to MultiQC v1.33 (Official Image)
+MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
+
+singularity exec $MULTIQC_CONTAINER multiqc \
+    --force \
+    --title "U251 Transcriptomic Evolution" \
+    --filename "U251_Final_Report.html" \
+    --outdir "ANALYSIS/results_therapy" \
+    ANALYSIS/results_therapy ANALYSIS/results_human_final ANALYSIS/xengsort_out
+
+echo "DONE. Final interactive report: ANALYSIS/results_therapy/U251_Final_Report.html"
