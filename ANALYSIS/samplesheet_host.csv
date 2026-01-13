@@ -1,0 +1,10 @@
+sample,fastq_1,fastq_2,strandedness
+N168B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/N168B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/N168B_rat_R2.fq.gz,auto
+N269B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/N269B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/N269B_rat_R2.fq.gz,auto
+IL64B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL64B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL64B_rat_R2.fq.gz,auto
+IL67B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL67B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL67B_rat_R2.fq.gz,auto
+IL68B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL68B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL68B_rat_R2.fq.gz,auto
+IL69B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL69B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL69B_rat_R2.fq.gz,auto
+NL70B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/NL70B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/NL70B_rat_R2.fq.gz,auto
+NL71B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/NL71B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/NL71B_rat_R2.fq.gz,auto
+IL66B,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL66B_rat_R1.fq.gz,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/xengsort_out/sorted_fastqs/IL66B_rat_R2.fq.gz,auto

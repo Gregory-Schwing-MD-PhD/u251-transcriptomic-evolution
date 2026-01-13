@@ -1,0 +1,7 @@
+input: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/samplesheet_host.csv"
+outdir: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/results_host_rat"
+fasta: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz"
+gtf: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf.gz"
+aligner: "star_salmon"
+skip_bbsplit: true
+save_unaligned: false
