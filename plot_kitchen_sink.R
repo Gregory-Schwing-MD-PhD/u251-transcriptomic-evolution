@@ -56,7 +56,7 @@ if (is.na(name_col)) {
     if ("gene_id" %in% colnames(res)) {
         # Check if they look like Ensembl IDs
         example <- res$gene_id[1]
-        if (grepl("^ENSG", example)) {
+        if (grepl("^ENS", example)) {
             message("LOG: Detected Ensembl IDs. Mapping to Symbols using Counts Dictionary...")
             
             # --- FILE BASED MAPPING ---
