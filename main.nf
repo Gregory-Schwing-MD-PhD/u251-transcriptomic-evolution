@@ -1,11 +1,17 @@
 nextflow.enable.dsl = 2
 
-params.input = "samples.csv"
+// Defaults set to null so they MUST be provided via command line (--host_fasta, etc)
+params.input = null
 params.outdir = "ANALYSIS"
-params.host_fasta = "path/to/rat.fa"
-params.graft_fasta = "path/to/human.fa"
+params.host_fasta = null
+params.graft_fasta = null
 
 workflow {
+    // Check if required params are provided
+    if (!params.host_fasta || !params.graft_fasta) {
+        error "Error: --host_fasta and --graft_fasta must be specified on the command line."
+    }
+
     ch_input = Channel.fromPath(params.input)
         .splitCsv(header:true)
         .map { row -> [ row.sample, [file(row.fastq_1), file(row.fastq_2)] ] }
@@ -19,6 +25,8 @@ workflow {
 
 process INDEX {
     storeDir "${params.outdir}/xengsort_index_clean"
+    cpus 16
+    memory '80 GB'
 
     input:
         path host
@@ -33,10 +41,13 @@ process INDEX {
 
 process SORT_READS {
     tag "${sample_id}"
-    // Pattern preserved for your downstream nf-core/rnaseq CSV generation
+    // Pattern preserved for downstream usage
     publishDir "${params.outdir}/sorted_fastqs", mode: 'copy', pattern: "*_human_R*.fq.gz"
     publishDir "${params.outdir}/sorted_fastqs", mode: 'copy', pattern: "*_rat_R*.fq.gz"
     publishDir "${params.outdir}/xengsort_out", mode: 'copy', pattern: "*.txt"
+    
+    cpus 8
+    memory '32 GB'
 
     input:
         tuple val(sample_id), path(reads)
@@ -49,27 +60,30 @@ process SORT_READS {
 
     script:
     """
-    # 1. Run xengsort - Ensuring all bins are exported for merging
+    # 1. Run xengsort
+    # FIXED: Removed invalid flags (--out-graft/host/both) and --classification count
+    # FIXED: Redirected output to .txt to capture stats table
+    
     xengsort classify \\
         --index index \\
         --fastq ${reads[0]} \\
         --pairs ${reads[1]} \\
         --mode coverage \\
-        --classification count \\
-        --out-graft --out-host --out-both \\
-        --prefix ${sample_id} \\
-        -T ${task.cpus} > ${sample_id}.txt
+        --out ${sample_id} \\
+        --compression gz \\
+        -T ${task.cpus} > ${sample_id}.txt 2>&1
 
-    # 2. Rationale: Merge 'Both' (conserved) into species bins. 
-    # Discard 'Ambig' (conflicting/noisy) to maintain purity.
-    
-    # Human Analysis Set (Graft + Both)
-    cat ${sample_id}.graft.1.fq.gz ${sample_id}.both.1.fq.gz > ${sample_id}_human_R1.fq.gz
-    cat ${sample_id}.graft.2.fq.gz ${sample_id}.both.2.fq.gz > ${sample_id}_human_R2.fq.gz
+    # 2. Merge Steps
+    # Merging 'Both' (conserved) into species bins.
+    # Using wildcards to safely handle .1.fq.gz vs _1.fq.gz variations
 
-    # Rat Analysis Set (Host + Both)
-    cat ${sample_id}.host.1.fq.gz ${sample_id}.both.1.fq.gz > ${sample_id}_rat_R1.fq.gz
-    cat ${sample_id}.host.2.fq.gz ${sample_id}.both.2.fq.gz > ${sample_id}_rat_R2.fq.gz
+    # Human (Graft + Both)
+    cat ${sample_id}*graft*1*fq.gz ${sample_id}*both*1*fq.gz > ${sample_id}_human_R1.fq.gz
+    cat ${sample_id}*graft*2*fq.gz ${sample_id}*both*2*fq.gz > ${sample_id}_human_R2.fq.gz
+
+    # Rat (Host + Both)
+    cat ${sample_id}*host*1*fq.gz ${sample_id}*both*1*fq.gz > ${sample_id}_rat_R1.fq.gz
+    cat ${sample_id}*host*2*fq.gz ${sample_id}*both*2*fq.gz > ${sample_id}_rat_R2.fq.gz
     """
 }
 
