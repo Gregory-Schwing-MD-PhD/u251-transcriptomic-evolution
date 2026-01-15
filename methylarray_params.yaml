@@ -1,0 +1,8 @@
+input: "ANALYSIS/samplesheet_methylarray.csv"
+outdir: "ANALYSIS/results_methylarray"
+genome: "GRCh38"
+fasta: "ANALYSIS/refs/human/GRCh38.primary_assembly.genome.fa.gz"
+gtf: "ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz"
+
+# Pipeline Defaults (Optional tweaks for better sensitivity)
+meth_min_depth: 0
