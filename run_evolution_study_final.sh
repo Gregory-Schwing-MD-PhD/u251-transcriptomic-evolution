@@ -48,15 +48,14 @@ unset R_LIBS_SITE
 # ==========================================
 
 # --- STEP 1: XENGSORT (Deconvolution) ---
-# UPDATED: Using Primary Assembly for cleaner index and sorting
+# UPDATED: Using params file for clean execution
 echo "RUNNING STEP 1: XENGSORT"
-nextflow run main.nf -profile singularity \
-    --input "ANALYSIS/samplesheet.csv" \
-    --host_fasta "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz" \
-    --graft_fasta "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/human/GRCh38.primary_assembly.genome.fa.gz" \
-    --outdir "ANALYSIS/xengsort_out" \
+nextflow run main.nf \
+    -profile singularity \
+    -params-file xengsort_params.yaml \
     -w "${WORK_DIR}" \
-    -resume -ansi-log false
+    -resume \
+    -ansi-log false
 
 unset NXF_PARAMS
 
