@@ -83,7 +83,6 @@ nextflow run nf-core/differentialabundance \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_lengths.tsv" \
     --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz" \
     --exploratory_main_variable Classification \
-    --shinyngs_build_app \
     --outdir "ANALYSIS/results_therapy" \
     -params-file therapy_params.yaml \
     -w "${WORK_DIR}" \
@@ -96,14 +95,16 @@ unset NXF_PARAMS
 echo "RUNNING STEP 4: GENERATING PUBLICATION PLOTS"
 
 # Container for R Plots
-CONTAINER="docker://quay.io/biocontainers/bioconductor-clusterprofiler:4.10.0--r43hdfd78af_0"
-singularity pull --name enrichment.img $CONTAINER
+#CONTAINER="docker://quay.io/biocontainers/bioconductor-clusterprofiler:4.10.0--r43hdfd78af_0"
+CONTAINER="docker://bioconductor/bioconductor_docker:RELEASE_3_18"
+singularity pull --name bioconductor.img $CONTAINER
 
 # Inputs
 DESEQ_FILE="ANALYSIS/results_therapy/tables/differential/therapy_impact.deseq2.results.tsv"
 GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
 OUTPUT_PREFIX="ANALYSIS/results_therapy/plots/U251_Publication"
 COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
+VST_FILE="ANALYSIS/results_therapy/tables/processed_abundance/all.vst.tsv"
 
 # Verification
 if [[ ! -f "$DESEQ_FILE" ]]; then
@@ -115,9 +116,10 @@ if [[ ! -f "$COUNTS_FILE" ]]; then
     exit 1
 fi
 
-# Execute R script with ALL 4 ARGUMENTS
-singularity exec enrichment.img Rscript plot_kitchen_sink.R \
+# 2. Run the Script
+singularity exec bioconductor.img Rscript plot_kitchen_sink.R \
     "$DESEQ_FILE" \
+    "$VST_FILE" \
     "$GMT_FILE" \
     "$OUTPUT_PREFIX" \
     "$COUNTS_FILE"
@@ -129,12 +131,13 @@ echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
 
 # FIX: Switched to MultiQC v1.33 (Official Image)
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
-
-singularity exec $MULTIQC_CONTAINER multiqc \
+# FIXED: Used --exclude software_versions to completely disable the crashing module
+singularity exec docker://multiqc/multiqc:v1.33 multiqc \
     --force \
     --title "U251 Transcriptomic Evolution" \
     --filename "U251_Final_Report.html" \
     --outdir "ANALYSIS/results_therapy" \
+    --exclude software_versions \
     ANALYSIS/results_therapy ANALYSIS/results_human_final ANALYSIS/xengsort_out
 
 echo "DONE. Final interactive report: ANALYSIS/results_therapy/U251_Final_Report.html"
