@@ -1,0 +1,9 @@
+sample,array,red_channel,green_channel
+IL68B,EPIC,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R03C01_Red.idat,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R03C01_Grn.idat
+IL69B,EPIC,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R04C01_Red.idat,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R04C01_Grn.idat
+IL67B,EPIC,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R02C01_Red.idat,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R02C01_Grn.idat
+N269B,EPIC,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R07C01_Red.idat,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R07C01_Grn.idat
+NL70B,EPIC,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R05C01_Red.idat,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R05C01_Grn.idat
+NL71B,EPIC,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R06C01_Red.idat,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R06C01_Grn.idat
+C2B,EPIC,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R08C01_Red.idat,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R08C01_Grn.idat
+IL66B,EPIC,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R01C01_Red.idat,/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/DATA/METHYLARRAY/RAW/205648300021_R01C01_Grn.idat
