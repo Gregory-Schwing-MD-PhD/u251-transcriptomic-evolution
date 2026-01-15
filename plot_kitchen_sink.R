@@ -56,17 +56,12 @@ if (is.na(name_col)) {
     if ("gene_id" %in% colnames(res)) {
         # Check if they look like Ensembl IDs
         example <- res$gene_id[1]
-        if (grepl("^ENS", example)) {
+        # UPDATED: Regex to capture ENSG (Human) or ENS (Rat/General)
+        if (grepl("^ENS", example)) { 
             message("LOG: Detected Ensembl IDs. Mapping to Symbols using Counts Dictionary...")
             
             # --- FILE BASED MAPPING ---
-            # Load the counts file which serves as our dictionary
-            # It usually has columns: gene_id, gene_name, ...
             dic <- fread(counts_file, select = c("gene_id", "gene_name"))
-            
-            # Ensure clean matching
-            # Remove version numbers from Dictionary IDs if they exist
-            # (Though usually deseq results and counts file match perfectly)
             
             # Merge
             res <- merge(res, dic, by="gene_id", all.x=TRUE)
@@ -152,15 +147,22 @@ p6 <- heatplot(top_gsea, foldChange=gene_list, showCategory=10) + ggtitle("Gene-
 save_and_store(p6, "_6_Heatplot", "Heatplot Matrix", 16, 6)
 
 # ------------------------------------------------------------------------------
-# 5. MULTIQC YAML
+# 5. MULTIQC YAML (FIXED FOR RELATIVE PATHS)
 # ------------------------------------------------------------------------------
 message(" [8/8] Generating MultiQC YAML...")
 mqc_file <- paste0(dirname(out_prefix), "/pathway_analysis_mqc.yaml")
+
+# Logic: Since MultiQC usually runs one level up (in the results root), 
+# we need to prepend the folder name (e.g., "plots/") to the image src.
+folder_name <- basename(dirname(out_prefix))
+
 sink(mqc_file)
 cat("id: 'pathway_analysis'\nsection_name: 'Pathway Enrichment'\nplot_type: 'html'\ndata: |\n    <div class='row'>\n")
 for (id in names(generated_images)) {
     info <- generated_images[[id]]
-    cat(paste0("        <div class='col-md-6'><h4>", info$title, "</h4><img src='", info$file, "' style='width:100%'></div>\n"))
+    # Dynamic Path Fix:
+    rel_path <- paste0(folder_name, "/", info$file)
+    cat(paste0("        <div class='col-md-6'><h4>", info$title, "</h4><img src='", rel_path, "' style='width:100%'></div>\n"))
 }
 cat("    </div>\n")
 sink()
