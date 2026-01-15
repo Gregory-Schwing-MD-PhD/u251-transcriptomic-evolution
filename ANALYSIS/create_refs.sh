@@ -91,12 +91,12 @@ fi
 echo -e "\n[2/3] Processing Rat Reference (mRatBN7.2 - Ensembl v110)..."
 cd "$RAT_DIR" || exit 1
 
-# URLs - UPDATED TO PRIMARY ASSEMBLY
-RAT_FASTA_URL="http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz"
+# URLs - UPDATED TO TOPLEVEL (Fixes 404 Error)
+RAT_FASTA_URL="http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz"
 RAT_GTF_URL="http://ftp.ensembl.org/pub/release-110/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.110.gtf.gz"
 
-# 1. Process FASTA
-FILE="Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz"
+# 1. Process FASTA (Updated filename)
+FILE="Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz"
 if [ -f "$FILE" ] && check_gzip "$FILE"; then
     echo "  [SKIP] $FILE exists and GZIP integrity OK."
 else
@@ -177,10 +177,10 @@ if [ -f "$RAT_GENERATED" ] && [ -s "$RAT_GENERATED" ]; then
 else
     echo "  [GEN]  Generating Rat Sets via R (msigdbr)..."
     if ! command -v Rscript &> /dev/null; then
-        echo "     [WARNING] Rscript not found. Skipping generation."
+        echo "       [WARNING] Rscript not found. Skipping generation."
     else
         export R_LIBS_USER="$RLIB_DIR"
-        cat <<EOF > generate_rat_gmt.R
+        cat <<INNER > generate_rat_gmt.R
         lib_dir <- "$RLIB_DIR"
         if (!dir.exists(lib_dir)) dir.create(lib_dir, recursive = TRUE)
         .libPaths(c(lib_dir, .libPaths()))
@@ -213,7 +213,7 @@ else
             writeLines(line, file_conn)
         }
         close(file_conn)
-EOF
+INNER
         Rscript generate_rat_gmt.R
         rm generate_rat_gmt.R
     fi
