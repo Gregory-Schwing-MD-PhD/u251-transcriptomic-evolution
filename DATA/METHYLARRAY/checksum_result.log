@@ -1,0 +1,21 @@
+FILENAME                                           | STATUS   | INTEGRITY Result
+-------------------------------------------------------------------------------------
+detP.complete.rda                                  | 100.0%   | ✅ Passed
+205648300021_R05C01_Red.idat                       | 100.0%   | ✅ Passed
+205648300021_R03C01_Grn.idat                       | 100.0%   | ✅ Passed
+205648300021.sdf                                   | 100.0%   | ✅ Passed
+205648300021_R04C01_Grn.idat                       | 100.0%   | ✅ Passed
+205648300021_R02C01_Grn.idat                       | 100.0%   | ✅ Passed
+205648300021_R02C01_Red.idat                       | 100.0%   | ✅ Passed
+205648300021_R07C01_Grn.idat                       | 100.0%   | ✅ Passed
+205648300021_R01C01_Red.idat                       | 100.0%   | ✅ Passed
+205648300021_R08C01_Red.idat                       | 100.0%   | ✅ Passed
+205648300021_R07C01_Red.idat                       | 100.0%   | ✅ Passed
+205648300021_R03C01_Red.idat                       | 100.0%   | ✅ Passed
+pdata.Rda                                          | 100.0%   | ✅ Passed
+205648300021_R05C01_Grn.idat                       | 100.0%   | ✅ Passed
+205648300021_R06C01_Red.idat                       | 100.0%   | ✅ Passed
+205648300021_R06C01_Grn.idat                       | 100.0%   | ✅ Passed
+205648300021_R04C01_Red.idat                       | 100.0%   | ✅ Passed
+205648300021_R08C01_Grn.idat                       | 100.0%   | ✅ Passed
+205648300021_R01C01_Grn.idat                       | 100.0%   | ✅ Passed
