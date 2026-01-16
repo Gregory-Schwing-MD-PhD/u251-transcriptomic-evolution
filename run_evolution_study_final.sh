@@ -94,10 +94,11 @@ unset NXF_PARAMS
 # --- STEP 4: VISUALIZATION (THE KITCHEN SINK) ---
 echo "RUNNING STEP 4: GENERATING PUBLICATION PLOTS"
 
-# Container for R Plots
-#CONTAINER="docker://quay.io/biocontainers/bioconductor-clusterprofiler:4.10.0--r43hdfd78af_0"
-CONTAINER="docker://bioconductor/bioconductor_docker:RELEASE_3_18"
-singularity pull --name bioconductor.img $CONTAINER
+# Container for R Plots - Using your custom build with all dependencies
+CONTAINER="docker://go2432/bioconductor:latest"
+
+# Pulling the image into a local .img file (using -F to overwrite if exists)
+singularity pull -F --name bioconductor.img $CONTAINER
 
 # Inputs
 DESEQ_FILE="ANALYSIS/results_therapy/tables/differential/therapy_impact.deseq2.results.tsv"
@@ -117,7 +118,8 @@ if [[ ! -f "$COUNTS_FILE" ]]; then
 fi
 
 # 2. Run the Script
-singularity exec bioconductor.img Rscript plot_kitchen_sink.R \
+# Added --bind . to ensure current directory files are accessible/writable
+singularity exec --bind . bioconductor.img Rscript plot_kitchen_sink.R \
     "$DESEQ_FILE" \
     "$VST_FILE" \
     "$GMT_FILE" \
@@ -129,10 +131,10 @@ echo "DONE. Visualizations saved to: ANALYSIS/results_therapy/plots/"
 # --- STEP 5: GENERATE FINAL MULTIQC REPORT ---
 echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
 
-# FIX: Switched to MultiQC v1.33 (Official Image)
+# Kept MultiQC v1.33 as requested
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
-# FIXED: Used --exclude software_versions to completely disable the crashing module
-singularity exec docker://multiqc/multiqc:v1.33 multiqc \
+
+singularity exec $MULTIQC_CONTAINER multiqc \
     --force \
     --title "U251 Transcriptomic Evolution" \
     --filename "U251_Final_Report.html" \
