@@ -91,55 +91,61 @@ nextflow run nf-core/differentialabundance \
 
 unset NXF_PARAMS
 
-# --- STEP 4: VISUALIZATION (THE KITCHEN SINK) ---
+# ==========================================
+# 4. VISUALIZATION (THE KITCHEN SINK)
+# ==========================================
 echo "RUNNING STEP 4: GENERATING PUBLICATION PLOTS"
 
-# Container for R Plots - Using your custom build with all dependencies
 CONTAINER="docker://go2432/bioconductor:latest"
+IMG_PATH="${NXF_SINGULARITY_CACHEDIR}/go2432-bioconductor.sif"
 
-# Pulling the image into a local .img file (using -F to overwrite if exists)
-singularity pull -F --name bioconductor.img $CONTAINER
+# Pull if not exists
+if [[ ! -f "$IMG_PATH" ]]; then
+    singularity pull "$IMG_PATH" "$CONTAINER"
+fi
 
 # Inputs
 DESEQ_FILE="ANALYSIS/results_therapy/tables/differential/therapy_impact.deseq2.results.tsv"
+VST_FILE="ANALYSIS/results_therapy/tables/processed_abundance/all.vst.tsv"
 GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
 OUTPUT_PREFIX="ANALYSIS/results_therapy/plots/U251_Publication"
 COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
-VST_FILE="ANALYSIS/results_therapy/tables/processed_abundance/all.vst.tsv"
 
-# Verification
-if [[ ! -f "$DESEQ_FILE" ]]; then
-    echo "ERROR: DESeq2 results file not found at: $DESEQ_FILE"
-    exit 1
-fi
-if [[ ! -f "$COUNTS_FILE" ]]; then
-    echo "ERROR: Counts file (dictionary) not found at: $COUNTS_FILE"
-    exit 1
-fi
-
-# 2. Run the Script
-# Added --bind . to ensure current directory files are accessible/writable
-singularity exec --bind . bioconductor.img Rscript plot_kitchen_sink.R \
+# FIX: Use $PWD:/data to provide absolute paths and set the working directory
+# This resolves the "destination must be an absolute path" FATAL error
+singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_sink.R \
     "$DESEQ_FILE" \
     "$VST_FILE" \
     "$GMT_FILE" \
     "$OUTPUT_PREFIX" \
     "$COUNTS_FILE"
 
-echo "DONE. Visualizations saved to: ANALYSIS/results_therapy/plots/"
-
-# --- STEP 5: GENERATE FINAL MULTIQC REPORT ---
+# ==========================================
+# 5. FINAL MULTIQC AGGREGATION
+# ==========================================
 echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
 
-# Kept MultiQC v1.33 as requested
+# FIX: MultiQC v1.33 KeyError bypass
+# We create a local config to explicitly disable the software_versions module 
+# before the Python Traceback occurs.
+cat << 'CONFIG' > mqc_config.yaml
+software_versions:
+    show: false
+CONFIG
+
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
 
-singularity exec $MULTIQC_CONTAINER multiqc \
+# Run MultiQC using absolute paths
+# We point to the specific directories to ensure it finds the data in the mapped /data volume
+singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
+    /data/ANALYSIS/results_therapy \
+    /data/ANALYSIS/results_human_final \
+    /data/ANALYSIS/xengsort_out \
     --force \
+    --config /data/mqc_config.yaml \
     --title "U251 Transcriptomic Evolution" \
     --filename "U251_Final_Report.html" \
-    --outdir "ANALYSIS/results_therapy" \
-    --exclude software_versions \
-    ANALYSIS/results_therapy ANALYSIS/results_human_final ANALYSIS/xengsort_out
+    --outdir "/data/ANALYSIS/results_therapy" \
+    --exclude software_versions
 
-echo "DONE. Final interactive report: ANALYSIS/results_therapy/U251_Final_Report.html"
+echo "DONE."

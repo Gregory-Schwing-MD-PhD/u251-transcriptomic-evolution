@@ -29,11 +29,10 @@ unset LD_LIBRARY_PATH PYTHONPATH R_LIBS R_LIBS_USER R_LIBS_SITE
 # ==========================================
 echo "RUNNING STEP 4: GENERATING PUBLICATION PLOTS"
 
-# Point to your custom built image
 CONTAINER="docker://go2432/bioconductor:latest"
 IMG_PATH="${NXF_SINGULARITY_CACHEDIR}/go2432-bioconductor.sif"
 
-# Pull the image if it doesn't exist in cache
+# Pull if not exists
 if [[ ! -f "$IMG_PATH" ]]; then
     singularity pull "$IMG_PATH" "$CONTAINER"
 fi
@@ -45,8 +44,9 @@ GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
 OUTPUT_PREFIX="ANALYSIS/results_therapy/plots/U251_Publication"
 COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
 
-# Run R using your custom image
-singularity exec --bind . "$IMG_PATH" Rscript plot_kitchen_sink.R \
+# FIX: Use $PWD:/data to provide absolute paths and set the working directory
+# This resolves the "destination must be an absolute path" FATAL error
+singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_sink.R \
     "$DESEQ_FILE" \
     "$VST_FILE" \
     "$GMT_FILE" \
@@ -58,15 +58,27 @@ singularity exec --bind . "$IMG_PATH" Rscript plot_kitchen_sink.R \
 # ==========================================
 echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
 
-# RESTORED TO YOUR ORIGINAL VERSION 1.33
+# FIX: MultiQC v1.33 KeyError bypass
+# We create a local config to explicitly disable the software_versions module 
+# before the Python Traceback occurs.
+cat << 'CONFIG' > mqc_config.yaml
+software_versions:
+    show: false
+CONFIG
+
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
 
-singularity exec $MULTIQC_CONTAINER multiqc \
+# Run MultiQC using absolute paths
+# We point to the specific directories to ensure it finds the data in the mapped /data volume
+singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
+    /data/ANALYSIS/results_therapy \
+    /data/ANALYSIS/results_human_final \
+    /data/ANALYSIS/xengsort_out \
     --force \
+    --config /data/mqc_config.yaml \
     --title "U251 Transcriptomic Evolution" \
     --filename "U251_Final_Report.html" \
-    --outdir "ANALYSIS/results_therapy" \
-    --ignore "*software_versions.yml" \
-    ANALYSIS/results_therapy ANALYSIS/results_human_final ANALYSIS/xengsort_out
+    --outdir "/data/ANALYSIS/results_therapy" \
+    --exclude software_versions
 
 echo "DONE."
