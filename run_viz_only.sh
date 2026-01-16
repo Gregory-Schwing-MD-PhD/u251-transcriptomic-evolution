@@ -25,9 +25,9 @@ export NXF_SINGULARITY_HOME_MOUNT=true
 unset LD_LIBRARY_PATH PYTHONPATH R_LIBS R_LIBS_USER R_LIBS_SITE
 
 # ==========================================
-# 4. VISUALIZATION (THE KITCHEN SINK)
+# 2. VISUALIZATION (THE KITCHEN SINK)
 # ==========================================
-echo "RUNNING STEP 4: GENERATING PUBLICATION PLOTS"
+echo "RUNNING STEP 2: GENERATING PUBLICATION PLOTS"
 
 CONTAINER="docker://go2432/bioconductor:latest"
 IMG_PATH="${NXF_SINGULARITY_CACHEDIR}/go2432-bioconductor.sif"
@@ -42,24 +42,20 @@ DESEQ_FILE="ANALYSIS/results_therapy/tables/differential/therapy_impact.deseq2.r
 VST_FILE="ANALYSIS/results_therapy/tables/processed_abundance/all.vst.tsv"
 GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
 OUTPUT_PREFIX="ANALYSIS/results_therapy/plots/U251_Publication"
-COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
 
-# FIX: Use $PWD:/data to provide absolute paths and set the working directory
-# This resolves the "destination must be an absolute path" FATAL error
+# UPDATED: Removed counts_file argument (v5 script uses internal org.Hs.eg.db mapping)
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_sink.R \
     "$DESEQ_FILE" \
     "$VST_FILE" \
     "$GMT_FILE" \
-    "$OUTPUT_PREFIX" \
-    "$COUNTS_FILE"
-
+    "$OUTPUT_PREFIX"
 
 # ==========================================
-# 5. FINAL MULTIQC AGGREGATION
+# 3. FINAL MULTIQC AGGREGATION
 # ==========================================
-echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
+echo "RUNNING STEP 3: FINAL MULTIQC AGGREGATION"
 
-# Config to silence software_versions internally (this works, the flag does not)
+# Config to silence software_versions internally
 cat << 'CONFIG' > mqc_config.yaml
 # mqc_config.yaml
 disable_version_detection: true
@@ -79,7 +75,6 @@ CONFIG
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
 
 # Run MultiQC
-# REMOVED: --exclude software_versions (This was the cause of the invalid value error)
 singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
     /data/ANALYSIS/results_therapy \
     /data/ANALYSIS/results_human_final \
@@ -89,6 +84,5 @@ singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
     --title "U251 Transcriptomic Evolution" \
     --filename "U251_Final_Report.html" \
     --outdir "/data/ANALYSIS/results_therapy"
-
 
 echo "DONE."
