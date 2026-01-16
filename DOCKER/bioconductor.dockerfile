@@ -1,7 +1,9 @@
 # Use the Bioconductor 3.18 image
 FROM bioconductor/bioconductor_docker:RELEASE_3_18
 
-# 1. System dependencies
+# ------------------------------------------------------------------------------
+# LAYER 1: System Dependencies (apt-get)
+# ------------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y \
     libxml2-dev libssl-dev libcurl4-openssl-dev \
     libpng-dev libjpeg-dev libtiff-dev libfreetype6-dev \
@@ -9,38 +11,69 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev libfontconfig1-dev cmake \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Install Bioconductor packages
-# Added DESeq2 explicitly just in case
+# ------------------------------------------------------------------------------
+# LAYER 2: Human Database
+# ------------------------------------------------------------------------------
+RUN R -e "BiocManager::install('org.Hs.eg.db')"
+
+# ------------------------------------------------------------------------------
+# LAYER 3: Rat Database
+# ------------------------------------------------------------------------------
+RUN R -e "BiocManager::install('org.Rn.eg.db')"
+
+# ------------------------------------------------------------------------------
+# LAYER 4: Core Computational Engines & Orthology
+# ------------------------------------------------------------------------------
+# ADDED: biomaRt (For Rat->Human Orthology)
 RUN R -e "BiocManager::install(c( \
     'DESeq2', \
     'clusterProfiler', \
-    'enrichplot', \
     'GSVA', \
     'GSEABase', \
     'EnhancedVolcano', \
+    'biomaRt' \
+    ))"
+
+# ------------------------------------------------------------------------------
+# LAYER 5: Foundation CRAN Packages
+# ------------------------------------------------------------------------------
+# ADDED: msigdbr (Rat-specific pathway sets)
+RUN R -e "install.packages(c( \
+    'data.table', \
+    'dplyr', \
+    'stringr', \
+    'magrittr', \
+    'ggplot2', \
+    'ggnewscale', \
+    'msigdbr' \
+    ), repos='http://cran.rstudio.com/')"
+
+# ------------------------------------------------------------------------------
+# LAYER 6: Complex Visualization Libraries
+# ------------------------------------------------------------------------------
+RUN R -e "BiocManager::install(c( \
     'ComplexHeatmap', \
+    'enrichplot', \
     'GOSemSim', \
     'treeio', \
     'ggtree' \
     ))"
 
-# 3. Install CRAN packages
-# ADDED: ape, ggrepel, pheatmap, RColorBrewer, dplyr
 RUN R -e "install.packages(c( \
-    'ggplot2', \
-    'ggnewscale', \
     'circlize', \
-    'stringr', \
-    'data.table', \
-    'magrittr', \
     'shadowtext', \
     'ggwordcloud', \
     'ggupset', \
-    'ape', \
-    'ggrepel', \
     'pheatmap', \
-    'RColorBrewer', \
-    'dplyr' \
+    'RColorBrewer' \
+    ), repos='http://cran.rstudio.com/')"
+
+# ------------------------------------------------------------------------------
+# LAYER 7: Volatile Layer
+# ------------------------------------------------------------------------------
+RUN R -e "install.packages(c( \
+    'ape', \
+    'ggrepel' \
     ), repos='http://cran.rstudio.com/')"
 
 WORKDIR /data
