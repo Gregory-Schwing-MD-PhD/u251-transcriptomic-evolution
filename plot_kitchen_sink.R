@@ -82,10 +82,10 @@ save_and_store <- function(plot_obj, suffix, title, w, h) {
 message(paste(" [2/10] Reading Data..."))
 
 # Load Dictionary for Mapping
-dic <- fread(counts_file, select = c("gene_id", "gene_name"))
+dic <- data.table::fread(counts_file, select = c("gene_id", "gene_name"))
 
 # A. DESeq2 Results
-res <- fread(deseq_file)
+res <- data.table::fread(deseq_file)
 # ID Mapping Logic
 possible_names <- c("gene_name", "GeneName", "symbol", "Symbol", "name")
 name_col <- intersect(possible_names, colnames(res))[1]
@@ -107,7 +107,7 @@ if (is.na(name_col)) {
 
 # B. VST Counts (for GSVA) - FIXED MAPPING
 message("LOG: Processing VST Matrix (Ensembl -> Symbol)...")
-vst_dt <- fread(vst_file)
+vst_dt <- data.table::fread(vst_file)
 colnames(vst_dt)[1] <- "gene_id" # Ensure first col is ID
 
 # Check if mapping is needed (look for ENSG prefix)
@@ -182,7 +182,15 @@ gmt <- read.gmt(gmt_file)
 overlap <- length(intersect(names(gene_list), gmt$gene))
 if (overlap < 5) stop("ERROR: < 5 genes overlap between Data and GMT.")
 
-gsea_res <- GSEA(gene_list, TERM2GENE = gmt, pvalueCutoff = 1.0, minGSSize = 5, maxGSSize = 500, verbose = FALSE, eps=1e-50)
+gsea_res <- GSEA(
+    gene_list,
+    TERM2GENE = gmt,
+    pvalueCutoff = 1.0,
+    minGSSize = 5,
+    maxGSSize = 500,
+    verbose = FALSE,
+    eps = 1e-50
+)
 
 if (is.null(gsea_res) || nrow(gsea_res) == 0) stop("GSEA returned no results.")
 
@@ -204,28 +212,31 @@ p_dot <- dotplot(top_gsea, showCategory=15, split=".sign", label_format=40) +
 save_and_store(p_dot, "_2_Dotplot", "Dotplot Summary", 12, 10)
 
 tryCatch({
-    p_tree <- treeplot(top_gsea, 
-                       cluster.params = list(method = "ward.D2"), 
-                       showCategory = 30, 
-                       fontsize=3) +
-              ggtitle("Hierarchical Pathway Clustering")
+    p_tree <- treeplot(
+        top_gsea, 
+        cluster.params = list(method = "ward.D2"), 
+        showCategory = 30, 
+        fontsize = 3
+    ) + ggtitle("Hierarchical Pathway Clustering")
     save_and_store(p_tree, "_3_Treeplot", "Treeplot Clusters", 14, 10)
 }, error = function(e) message(paste("Skipping Treeplot:", e$message)))
 
-p_emap <- emapplot(top_gsea, 
-                   showCategory = 30, 
-                   cex.params = list(category_label=0.6), 
-                   layout.params = list(layout="nicely")) +
-          ggtitle("Pathway Functional Modules")
+p_emap <- emapplot(
+    top_gsea, 
+    showCategory = 30, 
+    cex.params = list(category_label=0.6), 
+    layout.params = list(layout="nicely")
+) + ggtitle("Pathway Functional Modules")
 save_and_store(p_emap, "_4_EnrichMap", "Enrichment Map", 12, 10)
 
-p_cnet <- cnetplot(top_gsea, 
-                   categorySize="pvalue", 
-                   showCategory=5,
-                   circular=TRUE, 
-                   color.params = list(foldChange=gene_list, edge=TRUE),
-                   cex.params = list(category_label=0.7, gene_label=0.5)) +
-          ggtitle("Top 5 Pathways & Gene Linkages")
+p_cnet <- cnetplot(
+    top_gsea, 
+    categorySize = "pvalue", 
+    showCategory = 5,
+    circular = TRUE, 
+    color.params = list(foldChange=gene_list, edge=TRUE),
+    cex.params = list(category_label=0.7, gene_label=0.5)
+) + ggtitle("Top 5 Pathways & Gene Linkages")
 save_and_store(p_cnet, "_5_Cnet", "Gene-Concept Network", 14, 14)
 
 if (requireNamespace("ggupset", quietly = TRUE)) {
@@ -242,7 +253,15 @@ message(" [6/10] Running GSVA (Sample-Level)...")
 gene_sets_list <- split(gmt$gene, gmt$term)
 
 # Run GSVA with method-specific parameter
-gsva_res <- gsva(vst_data, gene_sets_list, method="gsva", kcdf="Gaussian", min.sz=10, max.sz=500, verbose=FALSE)
+gsva_res <- gsva(
+    vst_data,
+    gene_sets_list,
+    method = "gsva",
+    kcdf = "Gaussian",
+    min.sz = 10,
+    max.sz = 500,
+    verbose = FALSE
+)
 
 # Select variable pathways
 pathway_var <- apply(gsva_res, 1, var)
@@ -254,12 +273,13 @@ gsva_subset <- gsva_res[top_pathways, ]
 # ------------------------------------------------------------------------------
 message(" [7/10] Generating GSVA Heatmap...")
 
-ht <- Heatmap(gsva_subset,
-        name = "GSVA Score",
-        column_title = "Sample-Specific Pathway Activity",
-        row_names_gp = gpar(fontsize = 8),
-        column_names_gp = gpar(fontsize = 8),
-        col = colorRamp2(c(-0.5, 0, 0.5), c("blue", "white", "red"))
+ht <- Heatmap(
+    gsva_subset,
+    name = "GSVA Score",
+    column_title = "Sample-Specific Pathway Activity",
+    row_names_gp = gpar(fontsize = 8),
+    column_names_gp = gpar(fontsize = 8),
+    col = colorRamp2(c(-0.5, 0, 0.5), c("blue", "white", "red"))
 )
 save_and_store(ht, "_7_GSVA_Heatmap", "GSVA Heatmap", 12, 10)
 
@@ -268,15 +288,23 @@ save_and_store(ht, "_7_GSVA_Heatmap", "GSVA Heatmap", 12, 10)
 # ------------------------------------------------------------------------------
 message(" [8/10] Generating MultiQC YAML...")
 mqc_file <- paste0(dirname(out_prefix), "/pathway_analysis_mqc.yaml")
-folder_name <- basename(dirname(out_prefix))
+
+# From the HTML report directory (ANALYSIS/results_therapy),
+# plots live in the "plots" subdir, so use plots/<file>.png. [web:32][web:46]
+folder_name <- "plots"
 
 sink(mqc_file)
 cat("id: 'pathway_analysis'\nsection_name: 'Pathway Enrichment'\nplot_type: 'html'\ndata: |\n    <div class='row'>\n")
 for (id in sort(names(generated_images))) {
     info <- generated_images[[id]]
     rel_path <- paste0(folder_name, "/", info$file)
-    cat(paste0("        <div class='col-md-6'><h4>", info$title,
-               "</h4><img src='", rel_path, "' style='width:100%'></div>\n"))
+    cat(paste0(
+        "        <div class='col-md-6'><h4>",
+        info$title,
+        "</h4><img src='",
+        rel_path,
+        "' style='width:100%'></div>\n"
+    ))
 }
 cat("    </div>\n")
 sink()

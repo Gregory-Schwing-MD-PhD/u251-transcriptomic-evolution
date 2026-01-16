@@ -66,6 +66,14 @@ disable_version_detection: true
 sections:
   software_versions:
     hide: true
+
+run_modules:
+  - custom_content
+
+custom_content:
+  order:
+    - pathway_analysis
+
 CONFIG
 
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
