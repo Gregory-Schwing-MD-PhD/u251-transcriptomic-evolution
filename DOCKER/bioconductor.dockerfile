@@ -17,8 +17,6 @@ RUN apt-get update && apt-get install -y \
 # 2a. Standard Entrez Database (Cached from previous build)
 RUN R -e "BiocManager::install('org.Hs.eg.db')"
 
-# 2b. Ensembl Native Database (New Layer)
-RUN R -e "BiocManager::install('EnsDb.Hsapiens.v86')"
 
 # ------------------------------------------------------------------------------
 # LAYER 3: Rat Databases
@@ -26,8 +24,6 @@ RUN R -e "BiocManager::install('EnsDb.Hsapiens.v86')"
 # 3a. Standard Entrez Database (Cached from previous build)
 RUN R -e "BiocManager::install('org.Rn.eg.db')"
 
-# 3b. Ensembl Native Database (New Layer)
-RUN R -e "BiocManager::install('EnsDb.Rnorvegicus.v79')"
 
 # ------------------------------------------------------------------------------
 # LAYER 4: Core Computational Engines & Orthology
@@ -81,5 +77,10 @@ RUN R -e "install.packages(c( \
     'ape', \
     'ggrepel' \
     ), repos='http://cran.rstudio.com/')"
+
+# 2b. Ensembl Native Database (New Layer)
+RUN R -e "BiocManager::install('EnsDb.Hsapiens.v86')"
+# 3b. Ensembl Native Database (New Layer)
+RUN R -e "BiocManager::install('EnsDb.Rnorvegicus.v79')"
 
 WORKDIR /data
