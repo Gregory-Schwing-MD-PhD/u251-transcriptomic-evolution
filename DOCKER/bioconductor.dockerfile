@@ -12,19 +12,26 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------------------------
-# LAYER 2: Human Database
+# LAYER 2: Human Databases
 # ------------------------------------------------------------------------------
+# 2a. Standard Entrez Database (Cached from previous build)
 RUN R -e "BiocManager::install('org.Hs.eg.db')"
 
+# 2b. Ensembl Native Database (New Layer)
+RUN R -e "BiocManager::install('EnsDb.Hsapiens.v86')"
+
 # ------------------------------------------------------------------------------
-# LAYER 3: Rat Database
+# LAYER 3: Rat Databases
 # ------------------------------------------------------------------------------
+# 3a. Standard Entrez Database (Cached from previous build)
 RUN R -e "BiocManager::install('org.Rn.eg.db')"
+
+# 3b. Ensembl Native Database (New Layer)
+RUN R -e "BiocManager::install('EnsDb.Rnorvegicus.v79')"
 
 # ------------------------------------------------------------------------------
 # LAYER 4: Core Computational Engines & Orthology
 # ------------------------------------------------------------------------------
-# ADDED: biomaRt (For Rat->Human Orthology)
 RUN R -e "BiocManager::install(c( \
     'DESeq2', \
     'clusterProfiler', \
@@ -37,7 +44,6 @@ RUN R -e "BiocManager::install(c( \
 # ------------------------------------------------------------------------------
 # LAYER 5: Foundation CRAN Packages
 # ------------------------------------------------------------------------------
-# ADDED: msigdbr (Rat-specific pathway sets)
 RUN R -e "install.packages(c( \
     'data.table', \
     'dplyr', \
