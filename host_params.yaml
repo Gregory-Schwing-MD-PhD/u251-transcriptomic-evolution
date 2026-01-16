@@ -1,7 +1,10 @@
-input: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/samplesheet_host.csv"
-outdir: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/results_host_rat"
-fasta: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz"
-gtf: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf.gz"
-aligner: "star_salmon"
+input: "ANALYSIS/samplesheet_host.csv"
+outdir: "ANALYSIS/results_host_rat"
+fasta: "ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz"
+gtf: "ANALYSIS/refs/rat/Rattus_norvegicus.mRatBN7.2.110.gtf.gz"
 skip_bbsplit: true
-save_unaligned: false
+save_unaligned: true
+aligner: "star_salmon"
+featurecounts_group_type: "gene_type"
+max_cpus: 16
+max_memory: "250.GB"

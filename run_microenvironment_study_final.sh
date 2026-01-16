@@ -60,7 +60,7 @@ unset R_LIBS_SITE
 # unset NXF_PARAMS
 
 # --- STEP 2: HOST RNA-SEQ (ACTIVE) ---
-# Processes the Rat-specific FASTQs (Assumes Step 1 outputs exist or are mapped in host_params.yaml)
+# Processes the Rat-specific FASTQs
 echo "RUNNING STEP 2: HOST RNA-SEQ"
 nextflow run nf-core/rnaseq \
     -r 3.22.2 \
@@ -94,10 +94,17 @@ unset NXF_PARAMS
 
 # --- STEP 4: SIGNAL SUBTRACTION (HOST SPECIFIC) ---
 echo "RUNNING STEP 4: SIGNAL SUBTRACTION"
-CONTAINER="docker://bioconductor/bioconductor_docker:RELEASE_3_18"
-singularity pull --name bioconductor_host.img $CONTAINER
 
-singularity exec bioconductor_host.img Rscript plot_host_cleaner.R \
+CONTAINER="docker://go2432/bioconductor:latest"
+IMG_PATH="${NXF_SINGULARITY_CACHEDIR}/go2432-bioconductor.sif"
+
+# Pull if not exists
+if [[ ! -f "$IMG_PATH" ]]; then
+    singularity pull "$IMG_PATH" "$CONTAINER"
+fi
+
+# We use the same container setup as the visualization step
+singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_host_cleaner.R \
     "ANALYSIS/results_host_rat/star_salmon/salmon.merged.gene_counts.tsv" \
     "ANALYSIS/metadata_host.csv" \
     "ANALYSIS/results_host_rat/LITT_Microenvironment"
@@ -118,7 +125,7 @@ if [[ ! -f "$DESEQ_FILE" ]]; then
     exit 1
 fi
 
-singularity exec bioconductor_host.img Rscript plot_kitchen_sink.R \
+singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_sink.R \
     "$DESEQ_FILE" \
     "$VST_FILE" \
     "$GMT_FILE" \
@@ -127,14 +134,34 @@ singularity exec bioconductor_host.img Rscript plot_kitchen_sink.R \
 
 # --- STEP 6: GENERATE FINAL MULTIQC REPORT ---
 echo "RUNNING STEP 6: FINAL MULTIQC AGGREGATION"
+
+# Config to silence software_versions internally
+cat << 'CONFIG' > mqc_config.yaml
+# mqc_config.yaml
+disable_version_detection: true
+sections:
+  software_versions:
+    hide: true
+
+run_modules:
+  - custom_content
+
+custom_content:
+  order:
+    - pathway_analysis
+CONFIG
+
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
 
-singularity exec $MULTIQC_CONTAINER multiqc \
+# Run MultiQC using absolute paths via /data bind
+# Removed --exclude software_versions flag as we handle it in config now
+singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
+    /data/ANALYSIS/results_host_rat \
+    /data/ANALYSIS/xengsort_out \
     --force \
+    --config /data/mqc_config.yaml \
     --title "U251 Microenvironment Response (Rat)" \
     --filename "U251_Host_Report.html" \
-    --outdir "ANALYSIS/results_host_rat" \
-    --exclude software_versions \
-    ANALYSIS/results_host_rat ANALYSIS/xengsort_out
+    --outdir "/data/ANALYSIS/results_host_rat"
 
 echo "DONE. Final report: ANALYSIS/results_host_rat/U251_Host_Report.html"
