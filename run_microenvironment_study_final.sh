@@ -48,20 +48,19 @@ unset R_LIBS_SITE
 # 4. PIPELINE EXECUTION
 # ==========================================
 
-# --- STEP 1: XENGSORT (Deconvolution) ---
-# Separates Human/Rat reads. Required for independent execution.
-echo "RUNNING STEP 1: XENGSORT"
-nextflow run main.nf \
-    -profile singularity \
-    -params-file xengsort_params.yaml \
-    -w "${WORK_DIR}" \
-    -resume \
-    -ansi-log false
+# --- STEP 1: XENGSORT (SKIPPED) ---
+# echo "SKIPPING STEP 1: XENGSORT"
+# nextflow run main.nf \
+#     -profile singularity \
+#     -params-file xengsort_params.yaml \
+#     -w "${WORK_DIR}" \
+#     -resume \
+#     -ansi-log false
 
-unset NXF_PARAMS
+# unset NXF_PARAMS
 
-# --- STEP 2: HOST RNA-SEQ (Quantification & QC) ---
-# Processes the Rat-specific FASTQs from Xengsort
+# --- STEP 2: HOST RNA-SEQ (ACTIVE) ---
+# Processes the Rat-specific FASTQs (Assumes Step 1 outputs exist or are mapped in host_params.yaml)
 echo "RUNNING STEP 2: HOST RNA-SEQ"
 nextflow run nf-core/rnaseq \
     -r 3.22.2 \
