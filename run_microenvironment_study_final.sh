@@ -119,18 +119,23 @@ GMT_FILE="ANALYSIS/refs/pathways/combined_rat.gmt"
 OUTPUT_PREFIX="ANALYSIS/results_host_rat/plots/Rat_Microenvironment"
 COUNTS_FILE="ANALYSIS/results_host_rat/star_salmon/salmon.merged.gene_counts.tsv"
 
+# NEW INPUT: The clean gene list generated in Step 4
+CLEAN_GENES_FILE="ANALYSIS/results_host_rat/LITT_Microenvironment_Clean_LITT_Genes.csv"
+
 # Verification
 if [[ ! -f "$DESEQ_FILE" ]]; then
     echo "ERROR: DESeq2 results file not found at: $DESEQ_FILE"
     exit 1
 fi
 
-singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_sink.R \
+# UPDATED: Calling 'plot_kitchen_sink_microenvironment.R' with the 6th argument
+singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_sink_microenvironment.R \
     "$DESEQ_FILE" \
     "$VST_FILE" \
     "$GMT_FILE" \
     "$OUTPUT_PREFIX" \
-    "$COUNTS_FILE"
+    "$COUNTS_FILE" \
+    "$CLEAN_GENES_FILE"
 
 # --- STEP 6: GENERATE FINAL MULTIQC REPORT ---
 echo "RUNNING STEP 6: FINAL MULTIQC AGGREGATION"

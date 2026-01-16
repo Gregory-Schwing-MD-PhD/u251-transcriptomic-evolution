@@ -1,3 +1,4 @@
 id,variable,reference,target
 LITT_Effect,condition,Primary,Recurrent
-Normal_Background,condition,Primary,Control_Brain
+Normal_Background,condition,Control_Brain,Primary
+Scarring_vs_Baseline,condition,Control_Brain,Recurrent
