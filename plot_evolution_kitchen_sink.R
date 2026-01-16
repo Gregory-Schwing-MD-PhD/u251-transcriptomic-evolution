@@ -1,11 +1,13 @@
 #!/usr/bin/env Rscript
 
 # ==============================================================================
-# U251 EVOLUTION & KITCHEN SINK VISUALIZATION SUITE (MEGA EDITION v2)
+# U251 EVOLUTION & KITCHEN SINK VISUALIZATION SUITE (MEGA EDITION v2.1)
 # Features:
 # 1. Phylogenetic Trees & Trajectories (LRT)
 # 2. Global GSVA (ComplexHeatmap)
 # 3. Pairwise EnhancedVolcano + GSEA
+# UPDATES:
+# - Swapped org.Hs.eg.db for EnsDb.Hsapiens.v86 for better ID coverage.
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -13,9 +15,10 @@ suppressPackageStartupMessages({
     library(ggplot2)
     library(dplyr)
     library(RColorBrewer)
-    library(ape)            
-    library(ggrepel)      
-    library(org.Hs.eg.db) # ID Mapping
+    library(ape)
+    library(ggrepel)
+    # library(org.Hs.eg.db) # <-- REMOVED
+    library(EnsDb.Hsapiens.v86) # <-- ADDED
     library(clusterProfiler)
     library(enrichplot)
     library(GSVA)
@@ -42,14 +45,23 @@ dir.create(dirname(output_prefix), showWarnings = FALSE, recursive = TRUE)
 # ==============================================================================
 cat("LOG: Loading Data...\n")
 meta <- read.csv(meta_file, row.names=1)
+# Ensure factors match your experimental design
 meta$Classification <- factor(meta$Classification, levels = c("Culture_U2", "Primary_U2", "Recurrent_U2"))
 
 counts <- read.table(counts_file, header=TRUE, row.names=1, check.names=FALSE)
 counts <- counts[, rownames(meta)]
 
-cat("LOG: Mapping IDs to Symbols...\n")
+cat("LOG: Mapping IDs to Symbols (Ensembl)...\n")
 clean_ids <- sub("\\..*", "", rownames(counts))
-syms <- mapIds(org.Hs.eg.db, keys=clean_ids, column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+
+# Map using EnsDb (Native Ensembl Support)
+syms <- suppressWarnings(mapIds(EnsDb.Hsapiens.v86, 
+                                keys=clean_ids, 
+                                column="SYMBOL", 
+                                keytype="GENEID", 
+                                multiVals="first"))
+
+# Fallback for NAs
 syms[is.na(syms)] <- clean_ids[is.na(syms)]
 rownames(counts) <- make.unique(as.character(syms))
 
@@ -72,12 +84,19 @@ dists <- dist(t(mat_sig))
 phylo_tree <- as.phylo(hclust(dists, method="ward.D2"))
 
 tryCatch({
+    # Attempt to root at C2B (Culture control) if it exists in your sample names
     rooted_tree <- root(phylo_tree, outgroup="C2B", resolve.root=TRUE)
     pdf(paste0(output_prefix, "_Phylogenetic_Tree.pdf"), width=8, height=6)
     plot(rooted_tree, main="Phylogenetic Reconstruction", type="phylogram", edge.width=2, cex=1.2)
     tiplabels(pch=21, bg=c("blue", rep("orange", 3), rep("red", 3)), cex=2)
     dev.off()
-}, error = function(e) cat("WARN: Could not root tree at C2B.\n"))
+}, error = function(e) {
+    cat("WARN: Could not root tree at C2B (Sample not found or other error).\n")
+    # Plot unrooted if rooting fails
+    pdf(paste0(output_prefix, "_Phylogenetic_Tree_Unrooted.pdf"), width=8, height=6)
+    plot(phylo_tree, main="Phylogenetic Reconstruction (Unrooted)", type="unrooted", edge.width=2, cex=1.2)
+    dev.off()
+})
 
 # --- B. PCA Trajectory ---
 cat("LOG: generating Trajectory...\n")
@@ -117,12 +136,12 @@ for(i in 1:nrow(contrasts)) {
     ref <- contrasts$reference[i]
     target <- contrasts$target[i]
     comp <- contrasts$id[i]
-    
+
     cat(sprintf("   -> Contrast: %s vs %s\n", target, ref))
     res <- results(dds_wald, contrast=c("Classification", target, ref))
     res_df <- as.data.frame(res)
     res_df$symbol <- rownames(res_df)
-    
+
     # --- Enhanced Volcano ---
     p_vol <- EnhancedVolcano(
         res_df,
@@ -139,15 +158,15 @@ for(i in 1:nrow(contrasts)) {
         max.overlaps = 20
     )
     ggsave(paste0(output_prefix, "_Volcano_", comp, ".pdf"), p_vol, width=8, height=8)
-    
+
     # --- GSEA ---
     res_df$rank <- sign(res_df$log2FoldChange) * -log10(res_df$pvalue)
     res_df <- res_df[!is.na(res_df$rank) & !is.infinite(res_df$rank),]
     gene_list <- sort(setNames(res_df$rank, res_df$symbol), decreasing=TRUE)
-    
+
     # Added eps=1e-50 for stability
     gsea_out <- GSEA(gene_list, TERM2GENE=gmt, pvalueCutoff=1, verbose=FALSE, eps=1e-50)
-    
+
     if(!is.null(gsea_out) && nrow(gsea_out) > 0) {
         gsea_out <- pairwise_termsim(gsea_out)
         p_dot <- dotplot(gsea_out, showCategory=10, split=".sign") + facet_grid(.~.sign)

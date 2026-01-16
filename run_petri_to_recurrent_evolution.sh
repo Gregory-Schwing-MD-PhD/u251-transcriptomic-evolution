@@ -21,7 +21,6 @@ WORK_DIR="$(pwd)/work"
 echo "LOG: Skipping Xengsort and RNA-Seq Alignment. Using existing matrices."
 
 # --- STEP 3: DIFFERENTIAL ABUNDANCE (EVOLUTION RUN) ---
-# Running this to ensure Nextflow generates its standard reports too
 echo "RUNNING STEP 3: DIFFERENTIAL ABUNDANCE (EVOLUTION)"
 
 nextflow run nf-core/differentialabundance \
@@ -50,17 +49,52 @@ OUTPUT_PREFIX="ANALYSIS/results_evolution/plots/Evolution"
 COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
 METADATA_FILE="ANALYSIS/metadata.csv"
 CONTRASTS_FILE="ANALYSIS/contrasts.csv"
+GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
 
 if [[ ! -f "$IMG_PATH" ]]; then
     singularity pull "$IMG_PATH" "$CONTAINER"
 fi
 
-# Pass the contrasts file as the 5th argument
+# Pass ALL 6 arguments (including GMT)
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_evolution_kitchen_sink.R \
     "$RESULTS_DIR" \
     "$OUTPUT_PREFIX" \
     "$COUNTS_FILE" \
     "$METADATA_FILE" \
-    "$CONTRASTS_FILE"
+    "$CONTRASTS_FILE" \
+    "$GMT_FILE"
+
+# --- STEP 5: FINAL MULTIQC AGGREGATION ---
+echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
+
+# Config to silence software_versions internally
+cat << 'CONFIG' > mqc_config.yaml
+# mqc_config.yaml
+disable_version_detection: true
+sections:
+  software_versions:
+    hide: true
+
+run_modules:
+  - custom_content
+
+custom_content:
+  order:
+    - pathway_analysis
+
+CONFIG
+
+MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
+
+# Run MultiQC
+singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
+    /data/ANALYSIS/results_therapy \
+    /data/ANALYSIS/results_human_final \
+    /data/ANALYSIS/xengsort_out \
+    --force \
+    --config /data/mqc_config.yaml \
+    --title "U251 Transcriptomic Evolution" \
+    --filename "U251_Final_Report.html" \
+    --outdir "/data/ANALYSIS/results_therapy"
 
 echo "DONE."

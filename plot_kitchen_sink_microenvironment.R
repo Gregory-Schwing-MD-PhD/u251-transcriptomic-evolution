@@ -1,10 +1,10 @@
 #!/usr/bin/env Rscript
 
 # ==========================================
-# MICROENVIRONMENT VISUALIZATION SUITE (RAT)
+# MICROENVIRONMENT VISUALIZATION SUITE (RAT - ENSEMBL UPDATE)
 # ==========================================
 # Features:
-# 1. Maps Rat Ensembl IDs -> Gene Symbols (using org.Rn.eg.db)
+# 1. Maps Rat Ensembl IDs -> Gene Symbols (using EnsDb.Rnorvegicus.v79)
 # 2. Filters for "Clean" genes (Signal Subtraction)
 # 3. Generates Validated Volcano Plots & Heatmaps
 
@@ -17,7 +17,8 @@ suppressPackageStartupMessages({
     library(clusterProfiler)
     library(enrichplot)
     library(stringr)
-    library(org.Rn.eg.db) # Added for Rat Mapping
+    # library(org.Rn.eg.db) # <-- REMOVED
+    library(EnsDb.Rnorvegicus.v79) # <-- ADDED (Native Ensembl Rat DB)
 })
 
 # --- ARGUMENTS ---
@@ -46,11 +47,18 @@ res_df <- fread(deseq_file)
 vst_df <- fread(vst_file)
 clean_genes <- fread(clean_genes_file)
 
-# --- ID MAPPING FUNCTION (Rat) ---
+# --- ID MAPPING FUNCTION (Rat Ensembl) ---
 map_rat_ids <- function(ids) {
     # Remove version numbers if present (ENSRNOG...1 -> ENSRNOG...)
     clean_ids <- sub("\\..*", "", ids)
-    syms <- mapIds(org.Rn.eg.db, keys=clean_ids, column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+    
+    # Map using EnsDb (Keytype is GENEID)
+    syms <- suppressWarnings(mapIds(EnsDb.Rnorvegicus.v79, 
+                                    keys=clean_ids, 
+                                    column="SYMBOL", 
+                                    keytype="GENEID", 
+                                    multiVals="first"))
+                                    
     syms[is.na(syms)] <- clean_ids[is.na(syms)] # Fallback to ID
     return(make.unique(as.character(syms)))
 }
@@ -73,7 +81,7 @@ valid_ids <- clean_genes$Gene
 cat(sprintf("LOG: Filtering to %d validated LITT-response genes.\n", length(valid_ids)))
 
 # Subset VST for Heatmaps (Only validated genes)
-# We need to find which VST rows correspond to valid IDs. 
+# We need to find which VST rows correspond to valid IDs.
 # Since we renamed VST rows to Symbols, we need a look-up or re-map.
 # Safer strategy: Filter VST by index based on the original ID column
 valid_indices <- which(vst_df$gene_id %in% valid_ids)
@@ -122,9 +130,9 @@ if (nrow(vst_clean) > 2) {
 
     # Dynamic height
     h_calc <- min(30, max(6, nrow(vst_clean)/5))
-    
+
     pdf(paste0(out_prefix, "_Heatmap_CleanGenes.pdf"), width=10, height=h_calc)
-    ht <- Heatmap(mat_scaled, 
+    ht <- Heatmap(mat_scaled,
         name = "Z-score",
         col = col_fun,
         show_row_names = nrow(vst_clean) < 80, # Show names if list is manageable
@@ -164,7 +172,7 @@ run_ora <- function(genes, title_suffix) {
             pvalueCutoff = 0.1,
             qvalueCutoff = 0.2
         )
-        
+
         if (!is.null(ego) && nrow(ego@result) > 0) {
             pdf(paste0(out_prefix, "_ORA_Dotplot_", title_suffix, ".pdf"), width=10, height=8)
             print(dotplot(ego, showCategory=20) + ggtitle(paste("Pathways:", title_suffix)))

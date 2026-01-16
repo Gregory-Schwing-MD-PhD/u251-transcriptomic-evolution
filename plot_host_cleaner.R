@@ -1,18 +1,17 @@
 #!/usr/bin/env Rscript
 
 # ==========================================
-# HOST PURITY FILTER (SIGNAL SUBTRACTION)
+# HOST PURITY FILTER (SIGNAL SUBTRACTION) - RAT/MICROENV
 # ==========================================
-# Goal: Identify LITT-specific genes while removing "Normal Brain" contamination.
-# Logic: If a gene goes UP in Recurrent (vs Primary) but is ALSO very high in 
-#        Control Brain (vs Primary), it is likely just tumor purity difference 
-#        (more normal brain cells in the sample), not a treatment effect.
+# UPDATES:
+# - Swapped org.Rn.eg.db for EnsDb.Rnorvegicus.v79 (Native Ensembl Rat DB)
 
 suppressPackageStartupMessages({
     library(data.table)
     library(ggplot2)
     library(DESeq2)
-    library(org.Rn.eg.db) # RAT DATABASE
+    # library(org.Rn.eg.db) # <-- REMOVED
+    library(EnsDb.Rnorvegicus.v79) # <-- ADDED
     library(ggrepel)
 })
 
@@ -33,7 +32,6 @@ counts <- fread(counts_file)
 meta <- fread(metadata_file)
 
 # UPDATE: Ensure we are using the correct condition names from your metadata
-# Adjust these strings if your CSV uses different names!
 target_conditions <- c("Primary_Microenv", "Recurrent_Microenv", "Control_Brain")
 meta <- meta[condition %in% target_conditions]
 
@@ -58,30 +56,36 @@ dds <- DESeq(dds)
 res_litt <- results(dds, contrast=c("condition", "Recurrent_Microenv", "Primary_Microenv"))
 
 # Contrast 2: The "Infiltration" Effect (Control Brain vs Primary)
-# If Primary is 90% tumor and Control is 0% tumor, "High in Control" = "High in Normal Brain"
 res_bg   <- results(dds, contrast=c("condition", "Control_Brain", "Primary_Microenv"))
 
 # ==========================================
-# 4. SUBTRACTION LOGIC
+# 4. SUBTRACTION LOGIC & ID MAPPING
 # ==========================================
 df <- data.frame(
-    Gene = rownames(res_litt), # Keep ID for downstream filtering
+    Gene = rownames(res_litt),
     LFC_LITT = res_litt$log2FoldChange,
     Padj_LITT = res_litt$padj,
     LFC_BG = res_bg$log2FoldChange
 )
 df <- na.omit(df)
 
-# --- MAP SYMBOLS ---
+# --- MAP SYMBOLS (ENSEMBL RAT) ---
 clean_ids <- sub("\\..*", "", df$Gene)
-df$Symbol <- mapIds(org.Rn.eg.db, keys=clean_ids, column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+
+# Map using EnsDb.Rnorvegicus (Keytype is GENEID)
+df$Symbol <- suppressWarnings(mapIds(EnsDb.Rnorvegicus.v79, 
+                                     keys=clean_ids, 
+                                     column="SYMBOL", 
+                                     keytype="GENEID", 
+                                     multiVals="first"))
+
+# Fallback to ID if symbol not found
 df$Symbol[is.na(df$Symbol)] <- df$Gene[is.na(df$Symbol)]
 
 # --- CLASSIFY ---
 df$Class <- "Noise"
 
-# Candidate: Significant change in LITT (Up or Down)
-# Note: We check abs(LFC) > 1 because subtraction matters for both up and down regulation
+# Candidate: Significant change in LITT
 df$Class[df$Padj_LITT < 0.05 & abs(df$LFC_LITT) > 1.0] <- "LITT_Candidate"
 
 # Artifact: If the gene follows the "Normal Brain" trend too closely
@@ -89,7 +93,6 @@ df$Class[df$Padj_LITT < 0.05 & abs(df$LFC_LITT) > 1.0] <- "LITT_Candidate"
 df$Class[df$Class == "LITT_Candidate" & df$LFC_LITT > 0 & df$LFC_BG > 1.0] <- "Purity_Artifact"
 
 # Case B: Downregulated in LITT, but also Downregulated in Control Brain -> Likely Tumor Purity Artifact
-# (Less common, but possible)
 df$Class[df$Class == "LITT_Candidate" & df$LFC_LITT < 0 & df$LFC_BG < -1.0] <- "Purity_Artifact"
 
 # ==========================================
@@ -98,17 +101,17 @@ df$Class[df$Class == "LITT_Candidate" & df$LFC_LITT < 0 & df$LFC_BG < -1.0] <- "
 # Save the Clean List (Candidates Only)
 clean_genes <- df[df$Class == "LITT_Candidate", ]
 write.csv(clean_genes, paste0(out_prefix, "_Clean_LITT_Genes.csv"), row.names=FALSE)
-cat(sprintf("LOG: Identified %d clean LITT-response genes (removed %d artifacts).\n", 
+cat(sprintf("LOG: Identified %d clean LITT-response genes (removed %d artifacts).\n",
             nrow(clean_genes), sum(df$Class == "Purity_Artifact")))
 
 # Plot
 pdf(paste0(out_prefix, "_Subtraction_Scatter.pdf"), width=8, height=8)
 p <- ggplot(df, aes(x=LFC_BG, y=LFC_LITT, color=Class)) +
     geom_point(alpha=0.6) +
-    geom_hline(yintercept=c(-1, 1), linetype="dashed") + 
+    geom_hline(yintercept=c(-1, 1), linetype="dashed") +
     geom_vline(xintercept=c(-1, 1), linetype="dashed") +
-    labs(x="Log2FC (Control Brain vs Primary)", 
-         y="Log2FC (Recurrent vs Primary)", 
+    labs(x="Log2FC (Control Brain vs Primary)",
+         y="Log2FC (Recurrent vs Primary)",
          title="Signal Subtraction (Rat Microenvironment)",
          subtitle="Removing Normal Brain Purity Artifacts") +
     scale_color_manual(values=c("LITT_Candidate"="red", "Purity_Artifact"="green", "Noise"="gray")) +
