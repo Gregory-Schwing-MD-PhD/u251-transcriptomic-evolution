@@ -56,6 +56,7 @@ singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_
 echo "RUNNING STEP 3: FINAL MULTIQC AGGREGATION"
 
 # Config to silence software_versions internally
+
 cat << 'CONFIG' > mqc_config.yaml
 # mqc_config.yaml
 disable_version_detection: true
@@ -63,13 +64,9 @@ sections:
   software_versions:
     hide: true
 
-run_modules:
-  - custom_content
-
 custom_content:
   order:
     - pathway_analysis
-
 CONFIG
 
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"

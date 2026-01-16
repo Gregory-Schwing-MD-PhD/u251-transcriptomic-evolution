@@ -1,10 +1,8 @@
 #!/usr/bin/env Rscript
 
 # ------------------------------------------------------------------------------
-# THE KITCHEN SINK: MASTER VISUALIZATION SUITE (v5.1 - Ensembl Fix)
+# THE KITCHEN SINK: MASTER VISUALIZATION SUITE (v5.2 - PNG + PDF Fix)
 # ------------------------------------------------------------------------------
-# UPDATES:
-# - Swapped org.Hs.eg.db for EnsDb.Hsapiens.v86 for better ID coverage.
 
 suppressPackageStartupMessages({
     library(DESeq2)
@@ -19,8 +17,7 @@ suppressPackageStartupMessages({
     library(circlize)
     library(stringr)
     library(data.table)
-    # library(org.Hs.eg.db) # <-- REMOVED (Poor coverage for lncRNAs)
-    library(EnsDb.Hsapiens.v86) # <-- ADDED (Native Ensembl support)
+    library(EnsDb.Hsapiens.v86)
 })
 
 args = commandArgs(trailingOnly=TRUE)
@@ -40,20 +37,13 @@ dir.create(dirname(out_prefix), showWarnings = FALSE, recursive = TRUE)
 # 1. ID MAPPING FUNCTION (ENSEMBL NATIVE)
 # ==============================================================================
 map_ids_to_symbols <- function(ids) {
-    # Remove version numbers (ENSG0001.2 -> ENSG0001)
     clean_ids <- sub("\\..*", "", ids)
-
-    # Map using EnsDb (Keytype is GENEID for Ensembl IDs)
-    # Note: We use suppressWarnings because 1:many mappings can warn
-    syms <- suppressWarnings(mapIds(EnsDb.Hsapiens.v86, 
-                                    keys = clean_ids, 
-                                    column = "SYMBOL", 
-                                    keytype = "GENEID", 
+    syms <- suppressWarnings(mapIds(EnsDb.Hsapiens.v86,
+                                    keys = clean_ids,
+                                    column = "SYMBOL",
+                                    keytype = "GENEID",
                                     multiVals = "first"))
-
-    # Fill NAs with original ID (fallback for truly unknown genes)
     syms[is.na(syms)] <- ids[is.na(syms)]
-    
     return(make.unique(as.character(syms)))
 }
 
@@ -82,7 +72,7 @@ vst_mat <- as.matrix(vst_aggr[, -1, with=FALSE])
 rownames(vst_mat) <- vst_aggr$symbol
 
 # ==============================================================================
-# 3. VISUALIZATIONS
+# 3. VISUALIZATIONS (PDF AND PNG)
 # ==============================================================================
 
 # --- Volcano Plot ---
@@ -104,6 +94,7 @@ p_vol <- EnhancedVolcano(
     widthConnectors = 0.5
 )
 ggsave(paste0(out_prefix, "_Volcano_mqc.pdf"), p_vol, width=10, height=8)
+ggsave(paste0(out_prefix, "_Volcano_mqc.png"), p_vol, width=10, height=8, dpi=300)
 
 # --- GSEA ---
 cat("LOG: Running GSEA...\n")
@@ -123,11 +114,15 @@ if (!is.null(gsea_res) && nrow(gsea_res) > 0) {
     if (nrow(top_gsea) > 50) top_gsea@result <- head(top_gsea@result[order(top_gsea@result$p.adjust), ], 50)
     top_gsea <- pairwise_termsim(top_gsea)
 
+    # Dotplot
     p_dot <- dotplot(top_gsea, showCategory=15, split=".sign") + facet_grid(.~.sign)
     ggsave(paste0(out_prefix, "_GSEA_Dotplot_mqc.pdf"), p_dot, width=12, height=8)
+    ggsave(paste0(out_prefix, "_GSEA_Dotplot_mqc.png"), p_dot, width=12, height=8, dpi=300)
 
+    # Network Plot
     p_cnet <- cnetplot(top_gsea, categorySize="pvalue", foldChange=gene_list, circular=TRUE, color.params=list(edge=TRUE))
     ggsave(paste0(out_prefix, "_GSEA_Network_mqc.pdf"), p_cnet, width=12, height=12)
+    ggsave(paste0(out_prefix, "_GSEA_Network_mqc.png"), p_cnet, width=12, height=12, dpi=300)
 }
 
 # --- GSVA Heatmap ---
@@ -143,7 +138,13 @@ ht <- Heatmap(gsva_res[top_pathways, ],
               column_title="Pathway Activity",
               col=colorRamp2(c(-0.5, 0, 0.5), c("blue", "white", "red")))
 
+# Save PDF
 pdf(paste0(out_prefix, "_GSVA_Heatmap_mqc.pdf"), width=10, height=8)
+draw(ht)
+dev.off()
+
+# Save PNG
+png(paste0(out_prefix, "_GSVA_Heatmap_mqc.png"), width=10, height=8, units="in", res=300)
 draw(ht)
 dev.off()
 

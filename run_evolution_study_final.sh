@@ -10,7 +10,6 @@
 #SBATCH -o xengsort_prod_%j.out
 #SBATCH -e xengsort_prod_%j.err
 
-# Trace every command to the log file for debugging
 set -x
 
 # ==========================================
@@ -48,7 +47,6 @@ unset R_LIBS_SITE
 # ==========================================
 
 # --- STEP 1: XENGSORT (Deconvolution) ---
-# UPDATED: Using params file for clean execution
 echo "RUNNING STEP 1: XENGSORT"
 nextflow run main.nf \
     -profile singularity \
@@ -99,7 +97,6 @@ echo "RUNNING STEP 4: GENERATING PUBLICATION PLOTS"
 CONTAINER="docker://go2432/bioconductor:latest"
 IMG_PATH="${NXF_SINGULARITY_CACHEDIR}/go2432-bioconductor.sif"
 
-# Pull if not exists
 if [[ ! -f "$IMG_PATH" ]]; then
     singularity pull "$IMG_PATH" "$CONTAINER"
 fi
@@ -109,34 +106,35 @@ DESEQ_FILE="ANALYSIS/results_therapy/tables/differential/therapy_impact.deseq2.r
 VST_FILE="ANALYSIS/results_therapy/tables/processed_abundance/all.vst.tsv"
 GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
 OUTPUT_PREFIX="ANALYSIS/results_therapy/plots/U251_Publication"
-COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
 
-# FIX: Use $PWD:/data to provide absolute paths and set the working directory
-# This resolves the "destination must be an absolute path" FATAL error
+# Run Rscript (removed counts file, uses internal mapping)
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_sink.R \
     "$DESEQ_FILE" \
     "$VST_FILE" \
     "$GMT_FILE" \
-    "$OUTPUT_PREFIX" \
-    "$COUNTS_FILE"
+    "$OUTPUT_PREFIX"
 
 # ==========================================
 # 5. FINAL MULTIQC AGGREGATION
 # ==========================================
 echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
 
-# FIX: MultiQC v1.33 KeyError bypass
-# We create a local config to explicitly disable the software_versions module 
-# before the Python Traceback occurs.
+# Config to silence software_versions internally
 cat << 'CONFIG' > mqc_config.yaml
-software_versions:
-    show: false
+# mqc_config.yaml
+disable_version_detection: true
+sections:
+  software_versions:
+    hide: true
+
+custom_content:
+  order:
+    - pathway_analysis
 CONFIG
 
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
 
-# Run MultiQC using absolute paths
-# We point to the specific directories to ensure it finds the data in the mapped /data volume
+# Run MultiQC
 singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
     /data/ANALYSIS/results_therapy \
     /data/ANALYSIS/results_human_final \
@@ -145,7 +143,6 @@ singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
     --config /data/mqc_config.yaml \
     --title "U251 Transcriptomic Evolution" \
     --filename "U251_Final_Report.html" \
-    --outdir "/data/ANALYSIS/results_therapy" \
-    --exclude software_versions
+    --outdir "/data/ANALYSIS/results_therapy"
 
 echo "DONE."

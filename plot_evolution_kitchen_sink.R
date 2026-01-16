@@ -1,13 +1,11 @@
 #!/usr/bin/env Rscript
 
 # ==============================================================================
-# U251 EVOLUTION & KITCHEN SINK VISUALIZATION SUITE (MEGA EDITION v2.1)
+# U251 EVOLUTION & KITCHEN SINK VISUALIZATION SUITE (MEGA EDITION v2.2 - PNG/PDF)
 # Features:
 # 1. Phylogenetic Trees & Trajectories (LRT)
 # 2. Global GSVA (ComplexHeatmap)
 # 3. Pairwise EnhancedVolcano + GSEA
-# UPDATES:
-# - Swapped org.Hs.eg.db for EnsDb.Hsapiens.v86 for better ID coverage.
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -17,8 +15,7 @@ suppressPackageStartupMessages({
     library(RColorBrewer)
     library(ape)
     library(ggrepel)
-    # library(org.Hs.eg.db) # <-- REMOVED
-    library(EnsDb.Hsapiens.v86) # <-- ADDED
+    library(EnsDb.Hsapiens.v86)
     library(clusterProfiler)
     library(enrichplot)
     library(GSVA)
@@ -45,7 +42,6 @@ dir.create(dirname(output_prefix), showWarnings = FALSE, recursive = TRUE)
 # ==============================================================================
 cat("LOG: Loading Data...\n")
 meta <- read.csv(meta_file, row.names=1)
-# Ensure factors match your experimental design
 meta$Classification <- factor(meta$Classification, levels = c("Culture_U2", "Primary_U2", "Recurrent_U2"))
 
 counts <- read.table(counts_file, header=TRUE, row.names=1, check.names=FALSE)
@@ -53,15 +49,11 @@ counts <- counts[, rownames(meta)]
 
 cat("LOG: Mapping IDs to Symbols (Ensembl)...\n")
 clean_ids <- sub("\\..*", "", rownames(counts))
-
-# Map using EnsDb (Native Ensembl Support)
-syms <- suppressWarnings(mapIds(EnsDb.Hsapiens.v86, 
-                                keys=clean_ids, 
-                                column="SYMBOL", 
-                                keytype="GENEID", 
+syms <- suppressWarnings(mapIds(EnsDb.Hsapiens.v86,
+                                keys=clean_ids,
+                                column="SYMBOL",
+                                keytype="GENEID",
                                 multiVals="first"))
-
-# Fallback for NAs
 syms[is.na(syms)] <- clean_ids[is.na(syms)]
 rownames(counts) <- make.unique(as.character(syms))
 
@@ -84,16 +76,31 @@ dists <- dist(t(mat_sig))
 phylo_tree <- as.phylo(hclust(dists, method="ward.D2"))
 
 tryCatch({
-    # Attempt to root at C2B (Culture control) if it exists in your sample names
+    # Attempt to root at C2B
     rooted_tree <- root(phylo_tree, outgroup="C2B", resolve.root=TRUE)
-    pdf(paste0(output_prefix, "_Phylogenetic_Tree.pdf"), width=8, height=6)
+    
+    # Save Rooted PDF
+    pdf(paste0(output_prefix, "_Phylogenetic_Tree_mqc.pdf"), width=8, height=6)
     plot(rooted_tree, main="Phylogenetic Reconstruction", type="phylogram", edge.width=2, cex=1.2)
     tiplabels(pch=21, bg=c("blue", rep("orange", 3), rep("red", 3)), cex=2)
     dev.off()
+    
+    # Save Rooted PNG
+    png(paste0(output_prefix, "_Phylogenetic_Tree_mqc.png"), width=8, height=6, units="in", res=300)
+    plot(rooted_tree, main="Phylogenetic Reconstruction", type="phylogram", edge.width=2, cex=1.2)
+    tiplabels(pch=21, bg=c("blue", rep("orange", 3), rep("red", 3)), cex=2)
+    dev.off()
+    
 }, error = function(e) {
-    cat("WARN: Could not root tree at C2B (Sample not found or other error).\n")
-    # Plot unrooted if rooting fails
-    pdf(paste0(output_prefix, "_Phylogenetic_Tree_Unrooted.pdf"), width=8, height=6)
+    cat("WARN: Could not root tree at C2B. Plotting unrooted.\n")
+    
+    # Save Unrooted PDF
+    pdf(paste0(output_prefix, "_Phylogenetic_Tree_Unrooted_mqc.pdf"), width=8, height=6)
+    plot(phylo_tree, main="Phylogenetic Reconstruction (Unrooted)", type="unrooted", edge.width=2, cex=1.2)
+    dev.off()
+    
+    # Save Unrooted PNG
+    png(paste0(output_prefix, "_Phylogenetic_Tree_Unrooted_mqc.png"), width=8, height=6, units="in", res=300)
     plot(phylo_tree, main="Phylogenetic Reconstruction (Unrooted)", type="unrooted", edge.width=2, cex=1.2)
     dev.off()
 })
@@ -109,7 +116,9 @@ p_pca <- ggplot(pcaData, aes(x=PC1, y=PC2, color=Class)) +
   geom_path(data=centroids, aes(group=1), arrow=arrow(length=unit(0.3,"cm"), type="closed"), linetype="dashed", color="black", alpha=0.5) +
   geom_text_repel(aes(label=Sample)) +
   scale_color_manual(values=c("blue", "orange", "red")) + theme_bw()
-ggsave(paste0(output_prefix, "_PCA_Trajectory.pdf"), p_pca)
+
+ggsave(paste0(output_prefix, "_PCA_Trajectory_mqc.pdf"), p_pca, width=8, height=6)
+ggsave(paste0(output_prefix, "_PCA_Trajectory_mqc.png"), p_pca, width=8, height=6, dpi=300)
 
 # ==============================================================================
 # 3. GLOBAL PATHWAY ANALYSIS (GSVA)
@@ -121,8 +130,17 @@ gsva_res <- gsva(mat_vst, gene_sets, method="gsva", kcdf="Gaussian", verbose=FAL
 
 path_var <- apply(gsva_res, 1, var)
 top_path <- names(sort(path_var, decreasing=TRUE))[1:30]
-pdf(paste0(output_prefix, "_GSVA_Global_Heatmap.pdf"), width=10, height=8)
-Heatmap(gsva_res[top_path, ], name="Score", column_title="Global Pathway Activity")
+
+ht_global <- Heatmap(gsva_res[top_path, ], name="Score", column_title="Global Pathway Activity")
+
+# Save PDF
+pdf(paste0(output_prefix, "_GSVA_Global_Heatmap_mqc.pdf"), width=10, height=8)
+draw(ht_global)
+dev.off()
+
+# Save PNG
+png(paste0(output_prefix, "_GSVA_Global_Heatmap_mqc.png"), width=10, height=8, units="in", res=300)
+draw(ht_global)
 dev.off()
 
 # ==============================================================================
@@ -157,20 +175,21 @@ for(i in 1:nrow(contrasts)) {
         widthConnectors = 0.5,
         max.overlaps = 20
     )
-    ggsave(paste0(output_prefix, "_Volcano_", comp, ".pdf"), p_vol, width=8, height=8)
+    ggsave(paste0(output_prefix, "_Volcano_", comp, "_mqc.pdf"), p_vol, width=8, height=8)
+    ggsave(paste0(output_prefix, "_Volcano_", comp, "_mqc.png"), p_vol, width=8, height=8, dpi=300)
 
     # --- GSEA ---
     res_df$rank <- sign(res_df$log2FoldChange) * -log10(res_df$pvalue)
     res_df <- res_df[!is.na(res_df$rank) & !is.infinite(res_df$rank),]
     gene_list <- sort(setNames(res_df$rank, res_df$symbol), decreasing=TRUE)
 
-    # Added eps=1e-50 for stability
     gsea_out <- GSEA(gene_list, TERM2GENE=gmt, pvalueCutoff=1, verbose=FALSE, eps=1e-50)
 
     if(!is.null(gsea_out) && nrow(gsea_out) > 0) {
         gsea_out <- pairwise_termsim(gsea_out)
         p_dot <- dotplot(gsea_out, showCategory=10, split=".sign") + facet_grid(.~.sign)
-        ggsave(paste0(output_prefix, "_GSEA_Dot_", comp, ".pdf"), p_dot, width=10, height=8)
+        ggsave(paste0(output_prefix, "_GSEA_Dot_", comp, "_mqc.pdf"), p_dot, width=10, height=8)
+        ggsave(paste0(output_prefix, "_GSEA_Dot_", comp, "_mqc.png"), p_dot, width=10, height=8, dpi=300)
     }
 }
 cat("LOG: Mega-Script Complete.\n")
