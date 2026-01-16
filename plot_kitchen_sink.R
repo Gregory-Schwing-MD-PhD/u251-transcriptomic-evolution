@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # ------------------------------------------------------------------------------
-# THE KITCHEN SINK: MASTER VISUALIZATION SUITE
+# THE KITCHEN SINK: MASTER VISUALIZATION SUITE (v4 - GSVA Fix)
 # Combines: GSEA (Dot, Tree, Map, Cnet, UpSet), GSVA (Heatmap), Volcano
 # ------------------------------------------------------------------------------
 
@@ -22,23 +22,25 @@ if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
 message(" [1/10] Loading Libraries...")
 suppressPackageStartupMessages({
-    # Core Analysis
     library(clusterProfiler)
     library(enrichplot)
     library(GSVA)
     library(GSEABase)
-    
-    # Visualization
     library(ggplot2)
     library(ggnewscale)
     library(EnhancedVolcano)
     library(ComplexHeatmap)
     library(circlize)
     library(stringr)
-    
-    # Data Wrangling
     library(data.table)
     library(GOSemSim)
+    
+    # Check for UpSet library
+    if (!requireNamespace("ggupset", quietly = TRUE)) {
+        message("WARNING: 'ggupset' not found. Skipping UpSet plot.")
+    } else {
+        library(ggupset)
+    }
 })
 
 # Helper to save plots
@@ -66,8 +68,6 @@ save_and_store <- function(plot_obj, suffix, title, w, h) {
         } else {
             ggsave(paste0(base_name, ".png"), plot_obj, width=w, height=h, dpi=300, bg="white")
         }
-        
-        # Add to report list
         section_id <- tolower(gsub(" ", "_", title))
         generated_images[[section_id]] <<- list(title = title, file = png_filename)
         message(paste("      Saved:", suffix))
@@ -79,6 +79,9 @@ save_and_store <- function(plot_obj, suffix, title, w, h) {
 # ------------------------------------------------------------------------------
 message(paste(" [2/10] Reading Data..."))
 
+# Load Dictionary for Mapping
+dic <- fread(counts_file, select = c("gene_id", "gene_name"))
+
 # A. DESeq2 Results
 res <- fread(deseq_file)
 # ID Mapping Logic
@@ -88,8 +91,7 @@ name_col <- intersect(possible_names, colnames(res))[1]
 if (is.na(name_col)) {
     if ("gene_id" %in% colnames(res)) {
         if (grepl("^ENS", res$gene_id[1])) {
-            message("LOG: Mapping Ensembl IDs to Symbols...")
-            dic <- fread(counts_file, select = c("gene_id", "gene_name"))
+            message("LOG: Mapping Ensembl IDs to Symbols (DESeq2)...")
             res <- merge(res, dic, by="gene_id", all.x=TRUE)
             res <- res[!is.na(gene_name) & gene_name != ""]
             name_col <- "gene_name"
@@ -101,17 +103,40 @@ if (is.na(name_col)) {
     }
 }
 
-# B. VST Counts (for GSVA)
-vst_data <- fread(vst_file, data.table=FALSE)
-rownames(vst_data) <- vst_data[,1]
-vst_data <- as.matrix(vst_data[,-1])
+# B. VST Counts (for GSVA) - FIXED MAPPING
+message("LOG: Processing VST Matrix (Ensembl -> Symbol)...")
+vst_dt <- fread(vst_file)
+colnames(vst_dt)[1] <- "gene_id" # Ensure first col is ID
+
+# Check if mapping is needed (look for ENSG prefix)
+if (grepl("^ENS", vst_dt$gene_id[1])) {
+    # Merge with dictionary
+    vst_dt <- merge(vst_dt, dic, by="gene_id", all.x=TRUE)
+    
+    # Filter valid symbols
+    vst_dt <- vst_dt[!is.na(gene_name) & gene_name != ""]
+    
+    # Aggregate Duplicates (Calculate Mean VST per Symbol)
+    numeric_cols <- setdiff(colnames(vst_dt), c("gene_id", "gene_name"))
+    vst_aggr <- vst_dt[, lapply(.SD, mean), by=gene_name, .SDcols=numeric_cols]
+    
+    # Convert to Matrix
+    vst_data <- as.matrix(vst_aggr[, -1])
+    rownames(vst_data) <- vst_aggr$gene_name
+    message(paste("      Mapped", nrow(vst_data), "unique gene symbols."))
+} else {
+    # Already symbols?
+    vst_data <- as.matrix(vst_dt[, -1])
+    rownames(vst_data) <- vst_dt$gene_id
+}
 
 # ------------------------------------------------------------------------------
 # 3. ENHANCED VOLCANO PLOT
 # ------------------------------------------------------------------------------
 message(" [3/10] Generating Volcano Plot...")
 
-p_vol <- EnhancedVolcano(res,
+volcano_args <- list(
+    toptable = res,
     lab = res[[name_col]],
     x = 'log2FoldChange',
     y = 'pvalue',
@@ -129,6 +154,7 @@ p_vol <- EnhancedVolcano(res,
     widthConnectors = 0.5,
     max.overlaps = 30
 )
+p_vol <- do.call(EnhancedVolcano, volcano_args)
 save_and_store(p_vol, "_1_Volcano", "Volcano Plot", 10, 10)
 
 # ------------------------------------------------------------------------------
@@ -166,44 +192,55 @@ if (nrow(top_gsea) > 60) {
 top_gsea <- pairwise_termsim(top_gsea)
 
 # ------------------------------------------------------------------------------
-# 6. GSEA VISUALIZATIONS
+# 6. GSEA VISUALIZATIONS (UPDATED SYNTAX)
 # ------------------------------------------------------------------------------
 message(" [5/10] Generating GSEA Plots...")
 
-# A. Dotplot
-p_dot <- dotplot(top_gsea, showCategory=15, split=".sign", label_format=40) + 
+p_dot <- dotplot(top_gsea, showCategory=15, split=".sign", label_format=40) +
          facet_grid(.~.sign) + ggtitle("Activated vs Suppressed Pathways") +
          theme(axis.text.y = element_text(size=8))
 save_and_store(p_dot, "_2_Dotplot", "Dotplot Summary", 12, 10)
 
-# B. Treeplot
 tryCatch({
-    p_tree <- treeplot(top_gsea, hclust_method = "ward.D2", showCategory = 30, fontsize=3) + 
+    p_tree <- treeplot(top_gsea, 
+                       cluster.params = list(method = "ward.D2"), 
+                       showCategory = 30, 
+                       fontsize=3) +
               ggtitle("Hierarchical Pathway Clustering")
     save_and_store(p_tree, "_3_Treeplot", "Treeplot Clusters", 14, 10)
-}, error = function(e) message("Skipping Treeplot"))
+}, error = function(e) message(paste("Skipping Treeplot:", e$message)))
 
-# C. Enrichment Map
-p_emap <- emapplot(top_gsea, showCategory = 30, cex_label_category=0.6, layout="nicely") + 
+p_emap <- emapplot(top_gsea, 
+                   showCategory = 30, 
+                   cex.params = list(category_label=0.6), 
+                   layout.params = list(layout="nicely")) +
           ggtitle("Pathway Functional Modules")
 save_and_store(p_emap, "_4_EnrichMap", "Enrichment Map", 12, 10)
 
-# D. Cnet Plot
-p_cnet <- cnetplot(top_gsea, categorySize="pvalue", foldChange=gene_list, showCategory=5, 
-                   circular=TRUE, colorEdge=TRUE, cex_label_category=0.7, cex_label_gene=0.5) + 
+p_cnet <- cnetplot(top_gsea, 
+                   categorySize="pvalue", 
+                   showCategory=5,
+                   circular=TRUE, 
+                   color.params = list(foldChange=gene_list, edge=TRUE),
+                   cex.params = list(category_label=0.7, gene_label=0.5)) +
           ggtitle("Top 5 Pathways & Gene Linkages")
 save_and_store(p_cnet, "_5_Cnet", "Gene-Concept Network", 14, 14)
 
-# E. UpSet Plot
-p_upset <- upsetplot(top_gsea, n=10) + ggtitle("Gene Overlap Top 10 Pathways")
-save_and_store(p_upset, "_6_UpSet", "UpSet Intersection", 14, 8)
+if (requireNamespace("ggupset", quietly = TRUE)) {
+    p_upset <- upsetplot(top_gsea, n=10) + ggtitle("Gene Overlap Top 10 Pathways")
+    save_and_store(p_upset, "_6_UpSet", "UpSet Intersection", 14, 8)
+}
 
 # ------------------------------------------------------------------------------
 # 7. RUN GSVA
 # ------------------------------------------------------------------------------
 message(" [6/10] Running GSVA (Sample-Level)...")
-gene_sets <- getGmt(gmt_file)
-gsva_res <- gsva(vst_data, gene_sets, min.sz=10, max.sz=500, verbose=FALSE)
+
+# Ensure gene sets are loaded correctly
+gene_sets_list <- split(gmt$gene, gmt$term)
+
+# Run GSVA with method-specific parameter (fixing deprecated warning)
+gsva_res <- gsva(vst_data, gene_sets_list, method="gsva", kcdf="Gaussian", min.sz=10, max.sz=500, verbose=FALSE)
 
 # Select variable pathways
 pathway_var <- apply(gsva_res, 1, var)
@@ -215,8 +252,8 @@ gsva_subset <- gsva_res[top_pathways, ]
 # ------------------------------------------------------------------------------
 message(" [7/10] Generating GSVA Heatmap...")
 
-ht <- Heatmap(gsva_subset, 
-        name = "GSVA Score", 
+ht <- Heatmap(gsva_subset,
+        name = "GSVA Score",
         column_title = "Sample-Specific Pathway Activity",
         row_names_gp = gpar(fontsize = 8),
         column_names_gp = gpar(fontsize = 8),
@@ -233,7 +270,6 @@ folder_name <- basename(dirname(out_prefix))
 
 sink(mqc_file)
 cat("id: 'pathway_analysis'\nsection_name: 'Pathway Enrichment'\nplot_type: 'html'\ndata: |\n    <div class='row'>\n")
-# Sort by ID to keep order (Volcano -> Dot -> Tree -> etc)
 for (id in sort(names(generated_images))) {
     info <- generated_images[[id]]
     rel_path <- paste0(folder_name, "/", info$file)
