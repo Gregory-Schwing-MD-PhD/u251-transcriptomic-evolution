@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # ------------------------------------------------------------------------------
-# THE KITCHEN SINK: MASTER VISUALIZATION SUITE (v4 - GSVA Fix)
+# THE KITCHEN SINK: MASTER VISUALIZATION SUITE (v4 - GSVA Fix, _mqc filenames)
 # Combines: GSEA (Dot, Tree, Map, Cnet, UpSet), GSVA (Heatmap), Volcano
 # ------------------------------------------------------------------------------
 
@@ -46,7 +46,9 @@ suppressPackageStartupMessages({
 # Helper to save plots
 generated_images <- list()
 save_and_store <- function(plot_obj, suffix, title, w, h) {
-    base_name <- paste0(out_prefix, suffix)
+    # Add _mqc so MultiQC recognises these as report assets
+    base_name <- paste0(out_prefix, suffix, "_mqc")
+    
     # Save PDF
     tryCatch({
         if (inherits(plot_obj, "Heatmap")) {
@@ -192,7 +194,7 @@ if (nrow(top_gsea) > 60) {
 top_gsea <- pairwise_termsim(top_gsea)
 
 # ------------------------------------------------------------------------------
-# 6. GSEA VISUALIZATIONS (UPDATED SYNTAX)
+# 6. GSEA VISUALIZATIONS
 # ------------------------------------------------------------------------------
 message(" [5/10] Generating GSEA Plots...")
 
@@ -239,7 +241,7 @@ message(" [6/10] Running GSVA (Sample-Level)...")
 # Ensure gene sets are loaded correctly
 gene_sets_list <- split(gmt$gene, gmt$term)
 
-# Run GSVA with method-specific parameter (fixing deprecated warning)
+# Run GSVA with method-specific parameter
 gsva_res <- gsva(vst_data, gene_sets_list, method="gsva", kcdf="Gaussian", min.sz=10, max.sz=500, verbose=FALSE)
 
 # Select variable pathways
@@ -273,9 +275,11 @@ cat("id: 'pathway_analysis'\nsection_name: 'Pathway Enrichment'\nplot_type: 'htm
 for (id in sort(names(generated_images))) {
     info <- generated_images[[id]]
     rel_path <- paste0(folder_name, "/", info$file)
-    cat(paste0("        <div class='col-md-6'><h4>", info$title, "</h4><img src='", rel_path, "' style='width:100%'></div>\n"))
+    cat(paste0("        <div class='col-md-6'><h4>", info$title,
+               "</h4><img src='", rel_path, "' style='width:100%'></div>\n"))
 }
 cat("    </div>\n")
 sink()
 
 message(" [Done] All plots generated successfully.")
+
