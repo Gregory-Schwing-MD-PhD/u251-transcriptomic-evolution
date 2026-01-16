@@ -1,38 +1,9 @@
 study_name: "U251_Therapy_Evolution"
-outdir: "./ANALYSIS/results_evolution"
-
-# --- INPUTS ---
 gtf: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz"
-gene_sets_files: "/wsu/home/go/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/pathways/combined_human.gmt"
-
-# --- GSEA SETTINGS (Optimized for Small N) ---
+gene_sets_files: "/wsu/home/go/go24/go2432/u251-transcriptomic-evolution/ANALYSIS/refs/pathways/combined_human.gmt"
 gsea_run: true
-gsea_permute: "gene_set"
-gsea_metric: "Diff_of_Classes"
-gsea_nperm: 1000
-gsea_rnd_seed: "1234"
-gsea_scoring_scheme: "weighted"
-gsea_sort: "real"
-gsea_order: "descending"
-gsea_set_max: 500
-gsea_set_min: 15
-gsea_norm: "meandiv"
-gsea_rnd_type: "no_balance"
-gsea_make_sets: true
-gsea_median: false
-gsea_num: 100
-gsea_plot_top_x: 20
-gsea_save_rnd_lists: false
-gsea_zip_report: false
-
-# --- GPROFILER SETTINGS ---
 gprofiler2_run: true
 gprofiler2_organism: "hsapiens"
-
-# --- DESEQ2 / FILTERING ---
-filtering_min_abundance: 0
-exploratory_clustering_method: "ward.D2"
-deseq2_vs_method: "vst"
 
 deseq2_min_replicates_for_replace: 99
 differential_subset_to_contrast_samples: true

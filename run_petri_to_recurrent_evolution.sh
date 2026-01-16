@@ -63,6 +63,8 @@ nextflow run nf-core/differentialabundance \
     --transcript_length_matrix "$(pwd)/ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_lengths.tsv" \
     --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz" \
     --exploratory_main_variable Classification \
+    --filtering_min_abundance 0 \
+    --filtering_min_samples 1 \
     --outdir "ANALYSIS/results_evolution" \
     -params-file evolution_params.yaml \
     -w "${WORK_DIR}" \
