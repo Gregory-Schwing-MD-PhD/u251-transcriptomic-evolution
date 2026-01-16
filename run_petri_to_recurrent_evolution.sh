@@ -67,7 +67,7 @@ singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_evolutio
 # --- STEP 5: FINAL MULTIQC AGGREGATION ---
 echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
 
-# Config to silence software_versions internally
+# UPDATED: Corrected Config Structure
 cat << 'CONFIG' > mqc_config.yaml
 # mqc_config.yaml
 disable_version_detection: true
@@ -75,26 +75,24 @@ sections:
   software_versions:
     hide: true
 
-run_modules:
-  - custom_content
-
 custom_content:
   order:
     - pathway_analysis
-
 CONFIG
 
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
 
-# Run MultiQC
+# UPDATED: 
+# 1. Scans 'results_evolution' (where Step 4 put the plots)
+# 2. outputs report to 'results_evolution'
 singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
-    /data/ANALYSIS/results_therapy \
+    /data/ANALYSIS/results_evolution \
     /data/ANALYSIS/results_human_final \
     /data/ANALYSIS/xengsort_out \
     --force \
     --config /data/mqc_config.yaml \
     --title "U251 Transcriptomic Evolution" \
-    --filename "U251_Final_Report.html" \
-    --outdir "/data/ANALYSIS/results_therapy"
+    --filename "U251_Evolution_Report.html" \
+    --outdir "/data/ANALYSIS/results_evolution"
 
 echo "DONE."
