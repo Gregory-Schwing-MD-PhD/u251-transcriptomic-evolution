@@ -1,7 +1,7 @@
 # Use the Bioconductor 3.18 image
 FROM bioconductor/bioconductor_docker:RELEASE_3_18
 
-# 1. System dependencies for high-quality graphics and data handling
+# 1. System dependencies
 RUN apt-get update && apt-get install -y \
     libxml2-dev libssl-dev libcurl4-openssl-dev \
     libpng-dev libjpeg-dev libtiff-dev libfreetype6-dev \
@@ -22,7 +22,8 @@ RUN R -e "BiocManager::install(c( \
     'ggtree' \
     ))"
 
-# 3. Install CRAN packages (including dependencies for pairwise_termsim)
+# 3. Install CRAN packages
+# ADDED: 'ggupset' is required for the upsetplot function
 RUN R -e "install.packages(c( \
     'ggplot2', \
     'ggnewscale', \
@@ -31,7 +32,8 @@ RUN R -e "install.packages(c( \
     'data.table', \
     'magrittr', \
     'shadowtext', \
-    'ggwordcloud' \
+    'ggwordcloud', \
+    'ggupset' \
     ), repos='http://cran.rstudio.com/')"
 
 WORKDIR /data
