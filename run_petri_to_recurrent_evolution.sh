@@ -6,10 +6,10 @@
 #SBATCH --mem=24G
 #SBATCH --time=2:00:00
 #SBATCH --job-name=u251_evolution
-#SBATCH --mail-user=go2432@wayne.edu
-#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH -o evolution_%j.out
 #SBATCH -e evolution_%j.err
+#SBATCH --mail-user=go2432@wayne.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
 
 set -x
 
@@ -59,11 +59,11 @@ echo "RUNNING STEP 3: DIFFERENTIAL ABUNDANCE (EVOLUTION)"
 nextflow run nf-core/differentialabundance \
     -r 1.5.0 \
     -profile singularity \
-    --input "$(pwd)/ANALYSIS/metadata.csv" \
-    --contrasts "$(pwd)/ANALYSIS/contrasts.csv" \
-    --matrix "$(pwd)/ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv" \
-    --transcript_length_matrix "$(pwd)/ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_lengths.tsv" \
-    --gtf "$(pwd)/ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz" \
+    --input "./ANALYSIS/metadata.csv" \
+    --contrasts "./ANALYSIS/contrasts.csv" \
+    --matrix "./ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv" \
+    --transcript_length_matrix "./ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_lengths.tsv" \
+    --gtf "./ANALYSIS/refs/human/GRCh38.primary_assembly.annotation.gtf.gz" \
     --exploratory_main_variable Classification \
     --filtering_min_abundance 1 \
     --filtering_min_samples 1 \
