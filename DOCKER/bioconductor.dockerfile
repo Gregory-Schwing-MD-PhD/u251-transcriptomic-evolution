@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 2. Install Bioconductor packages
+# Added DESeq2 explicitly just in case
 RUN R -e "BiocManager::install(c( \
+    'DESeq2', \
     'clusterProfiler', \
     'enrichplot', \
     'GSVA', \
@@ -23,7 +25,7 @@ RUN R -e "BiocManager::install(c( \
     ))"
 
 # 3. Install CRAN packages
-# ADDED: 'ggupset' is required for the upsetplot function
+# ADDED: ape, ggrepel, pheatmap, RColorBrewer, dplyr
 RUN R -e "install.packages(c( \
     'ggplot2', \
     'ggnewscale', \
@@ -33,7 +35,12 @@ RUN R -e "install.packages(c( \
     'magrittr', \
     'shadowtext', \
     'ggwordcloud', \
-    'ggupset' \
+    'ggupset', \
+    'ape', \
+    'ggrepel', \
+    'pheatmap', \
+    'RColorBrewer', \
+    'dplyr' \
     ), repos='http://cran.rstudio.com/')"
 
 WORKDIR /data
