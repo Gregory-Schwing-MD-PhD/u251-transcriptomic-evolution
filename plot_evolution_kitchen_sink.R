@@ -1,18 +1,20 @@
 #!/usr/bin/env Rscript
 
 # ==============================================================================
-# U251 EVOLUTION & KITCHEN SINK VISUALIZATION SUITE (MEGA EDITION)
-# Combines: Phylogenetic Trees, Trajectories, GSVA, and Pairwise GSEA/Volcano
+# U251 EVOLUTION & KITCHEN SINK VISUALIZATION SUITE (MEGA EDITION v2)
+# Features:
+# 1. Phylogenetic Trees & Trajectories (LRT)
+# 2. Global GSVA (ComplexHeatmap)
+# 3. Pairwise EnhancedVolcano + GSEA
 # ==============================================================================
 
 suppressPackageStartupMessages({
     library(DESeq2)
     library(ggplot2)
-    library(pheatmap)
     library(dplyr)
     library(RColorBrewer)
-    library(ape)      
-    library(ggrepel)  
+    library(ape)            
+    library(ggrepel)      
     library(org.Hs.eg.db) # ID Mapping
     library(clusterProfiler)
     library(enrichplot)
@@ -20,6 +22,7 @@ suppressPackageStartupMessages({
     library(GSEABase)
     library(ComplexHeatmap)
     library(circlize)
+    library(EnhancedVolcano)
 })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -120,23 +123,32 @@ for(i in 1:nrow(contrasts)) {
     res_df <- as.data.frame(res)
     res_df$symbol <- rownames(res_df)
     
-    # Volcano
-    res_df$sig <- "NS"
-    res_df$sig[res_df$padj < 0.05 & res_df$log2FoldChange > 1] <- "UP"
-    res_df$sig[res_df$padj < 0.05 & res_df$log2FoldChange < -1] <- "DOWN"
+    # --- Enhanced Volcano ---
+    p_vol <- EnhancedVolcano(
+        res_df,
+        lab = res_df$symbol,
+        x = 'log2FoldChange',
+        y = 'padj',
+        title = paste0("Volcano: ", comp),
+        pCutoff = 0.05,
+        FCcutoff = 1.0,
+        pointSize = 2.0,
+        labSize = 3.0,
+        drawConnectors = TRUE,
+        widthConnectors = 0.5,
+        max.overlaps = 20
+    )
+    ggsave(paste0(output_prefix, "_Volcano_", comp, ".pdf"), p_vol, width=8, height=8)
     
-    p_vol <- ggplot(res_df, aes(x=log2FoldChange, y=-log10(padj), color=sig)) +
-        geom_point(alpha=0.5) + scale_color_manual(values=c("blue", "grey", "red")) +
-        theme_bw() + ggtitle(paste0("Volcano: ", comp))
-    ggsave(paste0(output_prefix, "_Volcano_", comp, ".pdf"), p_vol)
-    
-    # GSEA
+    # --- GSEA ---
     res_df$rank <- sign(res_df$log2FoldChange) * -log10(res_df$pvalue)
     res_df <- res_df[!is.na(res_df$rank) & !is.infinite(res_df$rank),]
     gene_list <- sort(setNames(res_df$rank, res_df$symbol), decreasing=TRUE)
     
-    gsea_out <- GSEA(gene_list, TERM2GENE=gmt, pvalueCutoff=1, verbose=FALSE)
-    if(nrow(gsea_out) > 0) {
+    # Added eps=1e-50 for stability
+    gsea_out <- GSEA(gene_list, TERM2GENE=gmt, pvalueCutoff=1, verbose=FALSE, eps=1e-50)
+    
+    if(!is.null(gsea_out) && nrow(gsea_out) > 0) {
         gsea_out <- pairwise_termsim(gsea_out)
         p_dot <- dotplot(gsea_out, showCategory=10, split=".sign") + facet_grid(.~.sign)
         ggsave(paste0(output_prefix, "_GSEA_Dot_", comp, ".pdf"), p_dot, width=10, height=8)

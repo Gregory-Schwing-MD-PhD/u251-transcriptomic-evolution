@@ -1,55 +1,122 @@
 #!/usr/bin/env Rscript
-library(data.table)
-library(ggplot2)
-library(DESeq2)
+
+# ==========================================
+# HOST PURITY FILTER (SIGNAL SUBTRACTION)
+# ==========================================
+# Goal: Identify LITT-specific genes while removing "Normal Brain" contamination.
+# Logic: If a gene goes UP in Recurrent (vs Primary) but is ALSO very high in 
+#        Control Brain (vs Primary), it is likely just tumor purity difference 
+#        (more normal brain cells in the sample), not a treatment effect.
+
+suppressPackageStartupMessages({
+    library(data.table)
+    library(ggplot2)
+    library(DESeq2)
+    library(org.Rn.eg.db) # RAT DATABASE
+    library(ggrepel)
+})
 
 args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 3) stop("Usage: Rscript plot_host_cleaner.R <counts> <metadata> <out_prefix>")
+
 counts_file <- args[1]
 metadata_file <- args[2]
 out_prefix <- args[3]
 
-# 1. Load Data
+# Ensure output directory exists
+dir.create(dirname(out_prefix), showWarnings = FALSE, recursive = TRUE)
+
+# ==========================================
+# 1. LOAD DATA
+# ==========================================
 counts <- fread(counts_file)
 meta <- fread(metadata_file)
-# Filter strictly for the conditions we defined
-meta <- meta[condition %in% c("Primary", "Recurrent", "Control_Brain")]
 
-# Match samples
+# UPDATE: Ensure we are using the correct condition names from your metadata
+# Adjust these strings if your CSV uses different names!
+target_conditions <- c("Primary_Microenv", "Recurrent_Microenv", "Control_Brain")
+meta <- meta[condition %in% target_conditions]
+
+# Match samples between counts and metadata
 valid_samples <- intersect(meta$sample, colnames(counts))
+if(length(valid_samples) == 0) stop("ERROR: No matching samples found between counts and metadata.")
+
 counts_mat <- as.matrix(counts[, ..valid_samples])
 rownames(counts_mat) <- counts$gene_id
 meta <- meta[match(valid_samples, meta$sample),]
 
-# 2. Run DESeq2
+# ==========================================
+# 2. RUN DESEQ2
+# ==========================================
 dds <- DESeqDataSetFromMatrix(countData = round(counts_mat), colData = meta, design = ~ condition)
 dds <- DESeq(dds)
 
-# 3. Get Contrasts
-res_litt <- results(dds, contrast=c("condition", "Recurrent", "Primary"))
-res_bg   <- results(dds, contrast=c("condition", "Control_Brain", "Primary"))
+# ==========================================
+# 3. DEFINE CONTRASTS
+# ==========================================
+# Contrast 1: The Treatment Effect (Recurrent vs Primary)
+res_litt <- results(dds, contrast=c("condition", "Recurrent_Microenv", "Primary_Microenv"))
 
-# 4. Subtraction Logic
+# Contrast 2: The "Infiltration" Effect (Control Brain vs Primary)
+# If Primary is 90% tumor and Control is 0% tumor, "High in Control" = "High in Normal Brain"
+res_bg   <- results(dds, contrast=c("condition", "Control_Brain", "Primary_Microenv"))
+
+# ==========================================
+# 4. SUBTRACTION LOGIC
+# ==========================================
 df <- data.frame(
-    Gene = rownames(res_litt),
+    Gene = rownames(res_litt), # Keep ID for downstream filtering
     LFC_LITT = res_litt$log2FoldChange,
     Padj_LITT = res_litt$padj,
     LFC_BG = res_bg$log2FoldChange
 )
 df <- na.omit(df)
 
-df$Class <- "Noise"
-df$Class[df$Padj_LITT < 0.05 & df$LFC_LITT > 1.0] <- "LITT_Candidate"
-# The Filter: If Normal Brain also has high expression (LFC_BG > 1), it's an artifact
-df$Class[df$Class == "LITT_Candidate" & df$LFC_BG > 1.0] <- "Purity_Artifact"
+# --- MAP SYMBOLS ---
+clean_ids <- sub("\\..*", "", df$Gene)
+df$Symbol <- mapIds(org.Rn.eg.db, keys=clean_ids, column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+df$Symbol[is.na(df$Symbol)] <- df$Gene[is.na(df$Symbol)]
 
+# --- CLASSIFY ---
+df$Class <- "Noise"
+
+# Candidate: Significant change in LITT (Up or Down)
+# Note: We check abs(LFC) > 1 because subtraction matters for both up and down regulation
+df$Class[df$Padj_LITT < 0.05 & abs(df$LFC_LITT) > 1.0] <- "LITT_Candidate"
+
+# Artifact: If the gene follows the "Normal Brain" trend too closely
+# Case A: Upregulated in LITT, but also Upregulated in Control Brain -> Likely Normal Brain Infiltration
+df$Class[df$Class == "LITT_Candidate" & df$LFC_LITT > 0 & df$LFC_BG > 1.0] <- "Purity_Artifact"
+
+# Case B: Downregulated in LITT, but also Downregulated in Control Brain -> Likely Tumor Purity Artifact
+# (Less common, but possible)
+df$Class[df$Class == "LITT_Candidate" & df$LFC_LITT < 0 & df$LFC_BG < -1.0] <- "Purity_Artifact"
+
+# ==========================================
+# 5. OUTPUTS
+# ==========================================
+# Save the Clean List (Candidates Only)
 clean_genes <- df[df$Class == "LITT_Candidate", ]
 write.csv(clean_genes, paste0(out_prefix, "_Clean_LITT_Genes.csv"), row.names=FALSE)
+cat(sprintf("LOG: Identified %d clean LITT-response genes (removed %d artifacts).\n", 
+            nrow(clean_genes), sum(df$Class == "Purity_Artifact")))
 
+# Plot
 pdf(paste0(out_prefix, "_Subtraction_Scatter.pdf"), width=8, height=8)
-ggplot(df, aes(x=LFC_BG, y=LFC_LITT, color=Class)) +
+p <- ggplot(df, aes(x=LFC_BG, y=LFC_LITT, color=Class)) +
     geom_point(alpha=0.6) +
-    geom_hline(yintercept=1, linetype="dashed") + geom_vline(xintercept=1, linetype="dashed") +
-    labs(x="Log2FC (Control Brain vs Primary)", y="Log2FC (Recurrent vs Primary)", title="LITT Signature Subtraction") +
+    geom_hline(yintercept=c(-1, 1), linetype="dashed") + 
+    geom_vline(xintercept=c(-1, 1), linetype="dashed") +
+    labs(x="Log2FC (Control Brain vs Primary)", 
+         y="Log2FC (Recurrent vs Primary)", 
+         title="Signal Subtraction (Rat Microenvironment)",
+         subtitle="Removing Normal Brain Purity Artifacts") +
     scale_color_manual(values=c("LITT_Candidate"="red", "Purity_Artifact"="green", "Noise"="gray")) +
     theme_minimal()
+
+# Label top 10 Artifacts (Genes that tricked us!)
+top_artifacts <- head(df[df$Class == "Purity_Artifact" & df$LFC_LITT > 2, ], 10)
+p <- p + geom_text_repel(data=top_artifacts, aes(label=Symbol), color="darkgreen", max.overlaps=10)
+
+print(p)
 dev.off()
