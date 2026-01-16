@@ -25,36 +25,6 @@ export NXF_SINGULARITY_HOME_MOUNT=true
 unset LD_LIBRARY_PATH PYTHONPATH R_LIBS R_LIBS_USER R_LIBS_SITE
 
 # ==========================================
-# 4. VISUALIZATION (THE KITCHEN SINK)
-# ==========================================
-echo "RUNNING STEP 4: GENERATING PUBLICATION PLOTS"
-
-CONTAINER="docker://go2432/bioconductor:latest"
-IMG_PATH="${NXF_SINGULARITY_CACHEDIR}/go2432-bioconductor.sif"
-
-# Pull if not exists
-if [[ ! -f "$IMG_PATH" ]]; then
-    singularity pull "$IMG_PATH" "$CONTAINER"
-fi
-
-# Inputs
-DESEQ_FILE="ANALYSIS/results_therapy/tables/differential/therapy_impact.deseq2.results.tsv"
-VST_FILE="ANALYSIS/results_therapy/tables/processed_abundance/all.vst.tsv"
-GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
-OUTPUT_PREFIX="ANALYSIS/results_therapy/plots/U251_Publication"
-COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
-
-# FIX: Use $PWD:/data to provide absolute paths and set the working directory
-# This resolves the "destination must be an absolute path" FATAL error
-singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_kitchen_sink.R \
-    "$DESEQ_FILE" \
-    "$VST_FILE" \
-    "$GMT_FILE" \
-    "$OUTPUT_PREFIX" \
-    "$COUNTS_FILE"
-
-
-# ==========================================
 # 5. FINAL MULTIQC AGGREGATION
 # ==========================================
 echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
