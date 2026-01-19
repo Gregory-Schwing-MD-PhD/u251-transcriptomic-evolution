@@ -83,4 +83,15 @@ RUN R -e "BiocManager::install('EnsDb.Hsapiens.v86')"
 # 3b. Ensembl Native Database (New Layer)
 RUN R -e "BiocManager::install('EnsDb.Rnorvegicus.v79')"
 
+# ------------------------------------------------------------------------------
+# LAYER 8: Final Additions (3D Plotting & Tidy Tools)
+# ------------------------------------------------------------------------------
+# Added specifically for PCA.R and Kitchen Sink v11
+# scatterplot3d -> For the 3D trajectory plot
+# tidyr -> For data reshaping in newer scripts
+RUN R -e "install.packages(c( \
+    'scatterplot3d', \
+    'tidyr' \
+    ), repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
