@@ -2,4 +2,3 @@ id,variable,reference,target
 brain_adaptation,Classification,Culture_U2,Primary_U2
 therapy_impact,Classification,Primary_U2,Recurrent_U2
 total_evolution,Classification,Culture_U2,Recurrent_U2
-core_brain_adaptation,Environment,In_Vitro,In_Vivo

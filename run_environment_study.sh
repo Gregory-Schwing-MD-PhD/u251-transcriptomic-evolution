@@ -5,9 +5,9 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G
 #SBATCH --time=2:00:00
-#SBATCH --job-name=u251_evolution
-#SBATCH -o evolution_%j.out
-#SBATCH -e evolution_%j.err
+#SBATCH --job-name=u251_env
+#SBATCH -o environment_%j.out
+#SBATCH -e environment_%j.err
 #SBATCH --mail-user=go2432@wayne.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
 
@@ -50,33 +50,29 @@ unset R_LIBS_SITE
 # --- FIX METADATA FORMATTING ---
 sed -i 's/\r//g' ANALYSIS/metadata.csv
 
-# --- SKIP STEPS 1 & 2 ---
-echo "LOG: Skipping Xengsort and RNA-Seq Alignment. Using existing matrices."
+# --- STEP 3: DIFFERENTIAL ABUNDANCE (ENVIRONMENT) ---
+echo "RUNNING STEP 3: DIFFERENTIAL ABUNDANCE (ENVIRONMENT)"
 
-# --- STEP 3: DIFFERENTIAL ABUNDANCE ---
-echo "RUNNING STEP 3: DIFFERENTIAL ABUNDANCE (EVOLUTION)"
-
-# Parameters are now strictly loaded from the YAML file to avoid conflicts
+# Using the ENVIRONMENT params file
 nextflow run nf-core/differentialabundance \
     -r 1.5.0 \
     -profile singularity \
-    -params-file evolution_params.yaml \
+    -params-file environment_params.yaml \
     -w "${WORK_DIR}" \
-    -ansi-log false \
-    -resume 
-
+    -ansi-log false 
 
 # --- STEP 4: CUSTOM VISUALIZATION ---
-echo "RUNNING STEP 4: KITCHEN SINK + EVOLUTION"
+echo "RUNNING STEP 4: KITCHEN SINK + ENVIRONMENT"
 
 CONTAINER="docker://go2432/bioconductor:latest"
 IMG_PATH="${NXF_SINGULARITY_CACHEDIR}/go2432-bioconductor.sif"
 
-RESULTS_DIR="ANALYSIS/results_evolution"
-OUTPUT_PREFIX="ANALYSIS/results_evolution/plots/Evolution"
+# Updated Paths for Environment Analysis
+RESULTS_DIR="ANALYSIS/results_environment"
+OUTPUT_PREFIX="ANALYSIS/results_environment/plots/Environment"
 COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
 METADATA_FILE="ANALYSIS/metadata.csv"
-CONTRASTS_FILE="ANALYSIS/contrasts.csv"
+CONTRASTS_FILE="ANALYSIS/contrasts_env.csv" # <--- Critical: This triggers the R script to use Environment mode
 GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
 
 if [[ ! -f "$IMG_PATH" ]]; then
@@ -109,13 +105,13 @@ CONFIG
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
 
 singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
-    /data/ANALYSIS/results_evolution \
+    /data/ANALYSIS/results_environment \
     /data/ANALYSIS/results_human_final \
     /data/ANALYSIS/xengsort_out \
     --force \
     --config /data/mqc_config.yaml \
-    --title "U251 Transcriptomic Evolution" \
-    --filename "U251_Evolution_Report.html" \
-    --outdir "/data/ANALYSIS/results_evolution"
+    --title "U251 Environment Comparison" \
+    --filename "U251_Environment_Report.html" \
+    --outdir "/data/ANALYSIS/results_environment"
 
 echo "DONE."

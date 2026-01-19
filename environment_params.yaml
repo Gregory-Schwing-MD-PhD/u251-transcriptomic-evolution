@@ -1,9 +1,9 @@
-study_name: "U251_Therapy_Evolution"
-outdir: "./ANALYSIS/results_evolution"
+study_name: "U251_Environment_Comparison"
+outdir: "./ANALYSIS/results_environment"
 
 # --- INPUTS ---
 input: "./ANALYSIS/metadata.csv"
-contrasts: "./ANALYSIS/contrasts.csv"
+contrasts: "./ANALYSIS/contrasts_env.csv"
 matrix: "./ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
 transcript_length_matrix: "./ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_lengths.tsv"
 
@@ -36,10 +36,8 @@ gprofiler2_run: true
 gprofiler2_organism: "hsapiens"
 
 # --- DESEQ2 / FILTERING ---
-exploratory_main_variable: "Classification"
+exploratory_main_variable: "Environment"
 exploratory_clustering_method: 'ward.D2'
 deseq2_vs_method: 'vst'
-
-# Force DESeq2 to keep running even with outliers
 deseq2_min_replicates_for_replace: 99
 differential_subset_to_contrast_samples: false
