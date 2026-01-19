@@ -1,5 +1,10 @@
 #!/usr/bin/env Rscript
 
+# ------------------------------------------------------------------------------
+# EVOLUTIONARY KITCHEN SINK v7.0 (With GBM Subtyping)
+# Combines: Evolution (Tree/PCA), GBM Subtyping, GSEA, GSVA, Volcano
+# ------------------------------------------------------------------------------
+
 suppressPackageStartupMessages({
     library(DESeq2)
     library(ggplot2)
@@ -15,6 +20,9 @@ suppressPackageStartupMessages({
     library(ComplexHeatmap)
     library(circlize)
     library(EnhancedVolcano)
+    library(ggnewscale)
+    library(data.table)
+    if (requireNamespace("ggupset", quietly = TRUE)) library(ggupset)
 })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -29,186 +37,184 @@ gmt_file      <- args[6]
 
 dir.create(dirname(output_prefix), showWarnings = FALSE, recursive = TRUE)
 
+# Helper for saving
+save_plot <- function(plot_obj, filename_base, w=10, h=8) {
+    tryCatch({
+        if (inherits(plot_obj, "Heatmap")) {
+            pdf(paste0(filename_base, ".pdf"), width=w, height=h); draw(plot_obj); dev.off()
+            png(paste0(filename_base, ".png"), width=w, height=h, units="in", res=300); draw(plot_obj); dev.off()
+        } else {
+            ggsave(paste0(filename_base, ".pdf"), plot_obj, width=w, height=h)
+            ggsave(paste0(filename_base, ".png"), plot_obj, width=w, height=h, dpi=300, bg="white")
+        }
+    }, error = function(e) cat(paste("WARN: Save failed for", filename_base, "\n")))
+}
+
 # ==============================================================================
-# 1. DATA LOADING & ROBUST ID MAPPING
+# 1. DATA LOADING & MAPPING
 # ==============================================================================
-cat("LOG: Loading Data...\n")
+cat("LOG [1/7]: Loading Data & Mapping IDs...\n")
 meta <- read.csv(meta_file, row.names=1)
-# Ensure factors are set (even if not used in the design, useful for plotting)
+
+# Ensure factors (Culture -> Primary -> Recurrent)
 if("Classification" %in% colnames(meta)) {
     meta$Classification <- factor(meta$Classification, levels = c("Culture_U2", "Primary_U2", "Recurrent_U2"))
-}
-if("Environment" %in% colnames(meta)) {
-    meta$Environment    <- factor(meta$Environment,    levels = c("In_Vitro", "In_Vivo"))
 }
 
 counts <- read.table(counts_file, header=TRUE, row.names=1, check.names=FALSE)
 counts <- counts[, rownames(meta)]
 
-cat("LOG: Mapping IDs to Symbols (EnsDb)...\n")
+# Map IDs to Symbols
 clean_ids <- sub("\\..*", "", rownames(counts))
-syms <- suppressWarnings(mapIds(EnsDb.Hsapiens.v86,
-                                keys=clean_ids,
-                                column="SYMBOL",
-                                keytype="GENEID",
-                                multiVals="first"))
+syms <- suppressWarnings(mapIds(EnsDb.Hsapiens.v86, keys=clean_ids, column="SYMBOL", keytype="GENEID", multiVals="first"))
 syms[is.na(syms)] <- clean_ids[is.na(syms)]
 rownames(counts) <- make.unique(as.character(syms))
 
-# --- DYNAMIC DESIGN FIX ---
-# We read the contrasts file NOW to decide what the design formula should be.
+# Design
 contrasts <- read.csv(contrast_file)
 design_var <- unique(contrasts$variable)[1]
-
-cat(paste0("LOG: Detected Design Variable from contrasts: ", design_var, "\n"))
 design_formula <- as.formula(paste0("~ ", design_var))
-
-# Create DESeq object with the dynamic formula
 dds <- DESeqDataSetFromMatrix(round(counts), meta, design_formula)
 
 # ==============================================================================
-# 2. EVOLUTIONARY ANALYSIS (LRT) - TREE & TRAJECTORY
+# 2. EVOLUTIONARY RECONSTRUCTION
 # ==============================================================================
-cat("LOG: Running LRT (Likelihood Ratio Test)...\n")
-# LRT compares the dynamic design against the intercept
+cat("LOG [2/7]: Evolutionary Reconstruction (Tree + PCA)...\n")
 dds_lrt <- DESeq(dds, test="LRT", reduced=~1)
 res_lrt <- results(dds_lrt)
 vsd <- vst(dds_lrt, blind=FALSE)
 mat_vst <- assay(vsd)
 
-# Phylogenetic Tree
-cat("LOG: Generating Phylogenetic Tree...\n")
-sig_genes <- rownames(res_lrt[which(res_lrt$padj < 0.05), ])
-# Safety check: if no sig genes, take top 500 most variable
-if(length(sig_genes) < 5) {
-    cat("WARN: Not enough significant genes for tree. Using top 500 variable genes.\n")
-    top_var <- head(order(rowVars(mat_vst), decreasing=TRUE), 500)
-    mat_sig <- mat_vst[top_var, ]
-} else {
-    mat_sig <- mat_vst[sig_genes, ]
+# Colors
+cls_colors <- c("Culture_U2"="blue", "Primary_U2"="orange", "Recurrent_U2"="red")
+if (!all(levels(meta$Classification) %in% names(cls_colors))) {
+  cls_colors <- setNames(rainbow(length(levels(meta$Classification))), levels(meta$Classification))
 }
 
-dists <- dist(t(mat_sig))
-phylo_tree <- as.phylo(hclust(dists, method="ward.D2"))
+# --- A. Phylogenetic Tree ---
+sig_genes <- rownames(res_lrt[which(res_lrt$padj < 0.05), ])
+if(length(sig_genes) < 5) sig_genes <- head(order(rowVars(mat_vst), decreasing=TRUE), 500)
+mat_sig <- mat_vst[sig_genes, ]
+phylo_tree <- as.phylo(hclust(dist(t(mat_sig)), method="ward.D2"))
 
 tryCatch({
-    # Try rooting at C2B if it exists
-    if("C2B" %in% phylo_tree$tip.label) {
-        rooted_tree <- root(phylo_tree, outgroup="C2B", resolve.root=TRUE)
-        plot_type <- "phylogram"
-    } else {
-        rooted_tree <- phylo_tree
-        plot_type <- "unrooted"
-    }
+    if("C2B" %in% phylo_tree$tip.label) rooted_tree <- root(phylo_tree, outgroup="C2B", resolve.root=TRUE) else rooted_tree <- phylo_tree
+    tip_cols <- cls_colors[as.character(meta[rooted_tree$tip.label, "Classification"])]
     
     pdf(paste0(output_prefix, "_Phylogenetic_Tree_mqc.pdf"), width=8, height=6)
-    plot(rooted_tree, main=paste0("Phylogenetic Reconstruction (", design_var, ")"), type=plot_type, edge.width=2, cex=1.2)
+    plot(rooted_tree, main="Phylogenetic Reconstruction", type="phylogram", edge.width=2, tip.color=tip_cols, label.offset=0.5)
+    legend("topleft", legend=names(cls_colors), fill=cls_colors, bty="n", cex=0.8)
     dev.off()
     
     png(paste0(output_prefix, "_Phylogenetic_Tree_mqc.png"), width=8, height=6, units="in", res=300)
-    plot(rooted_tree, main=paste0("Phylogenetic Reconstruction (", design_var, ")"), type=plot_type, edge.width=2, cex=1.2)
+    plot(rooted_tree, main="Phylogenetic Reconstruction", type="phylogram", edge.width=2, tip.color=tip_cols, label.offset=0.5)
+    legend("topleft", legend=names(cls_colors), fill=cls_colors, bty="n", cex=0.8)
     dev.off()
-}, error = function(e) {
-    cat("WARN: Tree plotting failed. Skipping.\n")
-})
+}, error = function(e) cat("WARN: Tree failed.\n"))
 
-# PCA Trajectory
-cat("LOG: Generating PCA Trajectory...\n")
+# --- B. PCA Trajectory ---
 pca <- prcomp(t(mat_sig))
+pcaData <- data.frame(PC1=pca$x[,1], PC2=pca$x[,2], Sample=rownames(meta), Class=meta$Classification)
+centroids <- aggregate(cbind(PC1, PC2) ~ Class, data=pcaData, FUN=mean)
+centroids <- centroids[order(centroids$Class),] 
 
-# Build PCA data frame safely (checking if columns exist)
-pcaData <- data.frame(PC1=pca$x[,1], PC2=pca$x[,2], Sample=rownames(meta))
+arrow_data <- data.frame(x_start = centroids$PC1[-nrow(centroids)], y_start = centroids$PC2[-nrow(centroids)],
+                         x_end = centroids$PC1[-1], y_end = centroids$PC2[-1])
 
-# Add Classification if available
-if("Classification" %in% colnames(meta)) {
-    pcaData$Class <- meta$Classification
-} else {
-    pcaData$Class <- "Unknown"
-}
-
-# Add Environment if available
-if("Environment" %in% colnames(meta)) {
-    pcaData$Env <- meta$Environment
-} else {
-    pcaData$Env <- "Unknown"
-}
-
-p_pca <- ggplot(pcaData, aes(x=PC1, y=PC2, color=Class, shape=Env)) +
-  geom_point(size=5) +
-  geom_text_repel(aes(label=Sample)) +
-  scale_color_manual(values=c("blue", "orange", "red", "grey")) +
-  scale_shape_manual(values=c(16, 17, 15)) + 
-  theme_bw() +
-  labs(title=paste0("PCA Trajectory: ", design_var))
-
-ggsave(paste0(output_prefix, "_PCA_Trajectory_mqc.pdf"), p_pca, width=8, height=6)
-ggsave(paste0(output_prefix, "_PCA_Trajectory_mqc.png"), p_pca, width=8, height=6, dpi=300)
+p_pca <- ggplot(pcaData, aes(x=PC1, y=PC2, color=Class)) +
+  geom_point(size=5, alpha=0.8) +
+  geom_text_repel(aes(label=Sample), show.legend=FALSE) +
+  geom_segment(data=arrow_data, aes(x=x_start, y=y_start, xend=x_end, yend=y_end), 
+               arrow=arrow(length=unit(0.3,"cm"), type="closed"), color="black", size=1, inherit.aes=FALSE) +
+  scale_color_manual(values=cls_colors) + theme_bw() + labs(title="PCA Trajectory")
+save_plot(p_pca, paste0(output_prefix, "_PCA_Trajectory_mqc"), 8, 6)
 
 # ==============================================================================
-# 3. GLOBAL PATHWAY ANALYSIS (GSVA)
+# 3. GBM SUBTYPE CLASSIFICATION (NEW MODULE) 
 # ==============================================================================
-cat("LOG: Running Global GSVA...\n")
+cat("LOG [3/7]: Running GBM Subtype Classification (Verhaak/Wang)...\n")
+
+# Hardcoded Canonical Signatures (Robust fallback)
+gbm_sigs <- list(
+    Mesenchymal = c("CHI3L1", "CD44", "VIM", "RELB", "STAT3", "MET", "TRADD", "MMP9", "TIMP1"),
+    Classical   = c("EGFR", "AKT2", "NOTCH3", "JAG1", "CCND2", "F3", "PDGFA", "NES"),
+    Proneural   = c("PDGFRA", "IDH1", "OLIG2", "SOX2", "NKX2-2", "OLIG1", "TP53"),
+    Neural      = c("NEFL", "GABRA1", "SYT1", "SLC12A5", "MBP", "GABRG2")
+)
+
+# Run GSVA for Subtypes
+gsva_sub <- gsva(mat_vst, gbm_sigs, method="gsva", kcdf="Gaussian", verbose=FALSE)
+
+# --- Plot 1: Subtype Heatmap ---
+ht_sub <- Heatmap(gsva_sub, name="Subtype Score", column_title="GBM Subtype Classification",
+                  col=colorRamp2(c(-0.5, 0, 0.5), c("blue", "white", "red")),
+                  top_annotation = HeatmapAnnotation(Class = meta$Classification, 
+                                                     col = list(Class = cls_colors)))
+save_plot(ht_sub, paste0(output_prefix, "_Subtype_Heatmap_mqc"), 8, 5)
+
+# --- Plot 2: Subtype Evolution Line Plot ---
+# Reshape for ggplot
+sub_df <- as.data.frame(t(gsva_sub))
+sub_df$Sample <- rownames(sub_df)
+sub_df$Class <- meta[sub_df$Sample, "Classification"]
+sub_long <- reshape2::melt(sub_df, id.vars=c("Sample", "Class"), variable.name="Subtype", value.name="Score")
+
+# Calculate Mean Score per Class per Subtype
+sub_summ <- sub_long %>% group_by(Class, Subtype) %>% summarize(MeanScore = mean(Score), .groups="drop")
+
+p_evol <- ggplot(sub_summ, aes(x=Class, y=MeanScore, color=Subtype, group=Subtype)) +
+    geom_line(size=1.5) + geom_point(size=4) +
+    scale_color_brewer(palette="Set1") +
+    theme_bw() +
+    labs(title="Evolution of GBM Subtypes", y="Mean GSVA Score", x="Evolutionary Stage") +
+    theme(axis.text.x = element_text(angle=45, hjust=1))
+
+save_plot(p_evol, paste0(output_prefix, "_Subtype_Evolution_mqc"), 8, 6)
+
+# ==============================================================================
+# 4. GLOBAL PATHWAYS (GSVA)
+# ==============================================================================
+cat("LOG [4/7]: Global GSVA...\n")
 gmt <- read.gmt(gmt_file)
-gene_sets <- split(gmt$gene, gmt$term)
-gsva_res <- gsva(mat_vst, gene_sets, method="gsva", kcdf="Gaussian", verbose=FALSE)
-
-path_var <- apply(gsva_res, 1, var)
-top_path <- names(sort(path_var, decreasing=TRUE))[1:30]
-ht_global <- Heatmap(gsva_res[top_path, ], name="Score", column_title="Global Pathway Activity")
-
-pdf(paste0(output_prefix, "_GSVA_Global_Heatmap_mqc.pdf"), width=10, height=8)
-draw(ht_global)
-dev.off()
-png(paste0(output_prefix, "_GSVA_Global_Heatmap_mqc.png"), width=10, height=8, units="in", res=300)
-draw(ht_global)
-dev.off()
+gsva_res <- gsva(mat_vst, split(gmt$gene, gmt$term), method="gsva", kcdf="Gaussian", verbose=FALSE)
+top_path <- names(sort(apply(gsva_res, 1, var), decreasing=TRUE)[1:30])
+ht_global <- Heatmap(gsva_res[top_path, ], name="Score", column_title="Global Pathway Activity",
+                     col=colorRamp2(c(-0.5, 0, 0.5), c("blue", "white", "red")))
+save_plot(ht_global, paste0(output_prefix, "_GSVA_Global_Heatmap_mqc"), 10, 8)
 
 # ==============================================================================
-# 4. PAIRWISE CONTRASTS
+# 5. PAIRWISE CONTRASTS
 # ==============================================================================
-cat("LOG: Running Pairwise Analysis (Volcano + GSEA)...\n")
+cat("LOG [5/7]: Pairwise Analysis...\n")
 dds_wald <- DESeq(dds, test="Wald")
-# Contrasts are already loaded
 
 for(i in 1:nrow(contrasts)) {
-    variable <- contrasts$variable[i]
-    ref      <- contrasts$reference[i]
-    target   <- contrasts$target[i]
-    comp     <- contrasts$id[i]
-
-    cat(sprintf("   -> Contrast: %s (%s: %s vs %s)\n", comp, variable, target, ref))
-
-    res <- results(dds_wald, contrast=c(variable, target, ref))
-    res_df <- as.data.frame(res)
-    res_df$symbol <- rownames(res_df)
-
-    # Enhanced Volcano
-    p_vol <- EnhancedVolcano(
-        res_df, lab = res_df$symbol, x = 'log2FoldChange', y = 'padj',
-        title = paste0("Volcano: ", comp, " (", variable, ")"),
-        pCutoff = 0.05, FCcutoff = 1.0, pointSize = 2.0, labSize = 3.0,
-        drawConnectors = TRUE, widthConnectors = 0.5, max.overlaps = 20
-    )
-    ggsave(paste0(output_prefix, "_Volcano_", comp, "_mqc.pdf"), p_vol, width=8, height=8)
-    ggsave(paste0(output_prefix, "_Volcano_", comp, "_mqc.png"), p_vol, width=8, height=8, dpi=300)
-
+    comp <- contrasts$id[i]; var <- contrasts$variable[i]; ref <- contrasts$reference[i]; target <- contrasts$target[i]
+    cat(sprintf("   -> Contrast: %s\n", comp))
+    
+    res <- results(dds_wald, contrast=c(var, target, ref))
+    res_df <- as.data.frame(res); res_df$symbol <- rownames(res_df)
+    
+    # Volcano
+    p_vol <- EnhancedVolcano(res_df, lab=res_df$symbol, x='log2FoldChange', y='pvalue',
+        title=paste0("Volcano: ", comp), subtitle=paste0(target, " vs ", ref),
+        pCutoff=0.05, FCcutoff=1.0, pointSize=2.0, labSize=3.0, drawConnectors=TRUE, widthConnectors=0.5, max.overlaps=20)
+    save_plot(p_vol, paste0(output_prefix, "_Volcano_", comp, "_mqc"), 8, 8)
+    
     # GSEA
     res_df$rank <- sign(res_df$log2FoldChange) * -log10(res_df$pvalue)
     res_df <- res_df[!is.na(res_df$rank) & !is.infinite(res_df$rank),]
     gene_list <- sort(setNames(res_df$rank, res_df$symbol), decreasing=TRUE)
-
+    
     gsea_out <- GSEA(gene_list, TERM2GENE=gmt, pvalueCutoff=1, verbose=FALSE, eps=1e-50)
     if(!is.null(gsea_out) && nrow(gsea_out) > 0) {
         if(nrow(gsea_out) > 50) gsea_out@result <- head(gsea_out@result[order(gsea_out@result$p.adjust), ], 50)
         gsea_out <- pairwise_termsim(gsea_out)
-
-        p_dot <- dotplot(gsea_out, showCategory=10, split=".sign") + facet_grid(.~.sign)
-        ggsave(paste0(output_prefix, "_GSEA_Dot_", comp, "_mqc.pdf"), p_dot, width=10, height=8)
-        ggsave(paste0(output_prefix, "_GSEA_Dot_", comp, "_mqc.png"), p_dot, width=10, height=8, dpi=300)
-
-        p_cnet <- cnetplot(gsea_out, categorySize="pvalue", foldChange=gene_list, circular=TRUE)
-        ggsave(paste0(output_prefix, "_GSEA_Network_", comp, "_mqc.pdf"), p_cnet, width=12, height=12)
-        ggsave(paste0(output_prefix, "_GSEA_Network_", comp, "_mqc.png"), p_cnet, width=12, height=12, dpi=300)
+        
+        save_plot(dotplot(gsea_out, showCategory=15, split=".sign") + facet_grid(.~.sign), paste0(output_prefix, "_GSEA_Dot_", comp, "_mqc"), 10, 8)
+        tryCatch({ save_plot(cnetplot(gsea_out, categorySize="pvalue", foldChange=gene_list, circular=TRUE), paste0(output_prefix, "_GSEA_Cnet_", comp, "_mqc"), 12, 12) }, error=function(e) NULL)
+        tryCatch({ save_plot(emapplot(gsea_out, showCategory=20, cex.params=list(category_label=0.6)), paste0(output_prefix, "_GSEA_Emap_", comp, "_mqc"), 12, 10) }, error=function(e) NULL)
+        if (requireNamespace("ggupset", quietly=TRUE)) tryCatch({ save_plot(upsetplot(gsea_out, n=10), paste0(output_prefix, "_GSEA_UpSet_", comp, "_mqc"), 12, 6) }, error=function(e) NULL)
     }
 }
-cat("LOG: Mega-Script Complete.\n")
+cat("LOG [6/7]: Complete.\n")
