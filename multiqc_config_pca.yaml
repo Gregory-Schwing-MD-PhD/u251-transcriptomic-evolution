@@ -1,0 +1,32 @@
+title: "U251 Evolution: PCA & Subtypes"
+subtitle: "Publication Ready"
+intro_text: "Targeted analysis for publication figures."
+
+report_section_order:
+    custom_content:
+        order: -1000
+
+custom_content:
+    order:
+        - gemini_prompts
+        - pca_pub
+        - trajectory_3d
+
+sp:
+    gemini_prompts:
+        fn: "GEMINI_PROMPTS.txt"
+    pca_pub:
+        fn: "*_PCA_Publication.png"
+    trajectory_3d:
+        fn: "*_3D_Subtype_Trajectory.png"
+
+modules:
+    gemini_prompts:
+        name: "AI Interpretation Prompts"
+        anchor: "gemini_prompts"
+    pca_pub:
+        name: "PCA Trajectory (Centered Labels)"
+        anchor: "pca_pub"
+    trajectory_3d:
+        name: "3D Subtype Evolution"
+        anchor: "trajectory_3d"
