@@ -13,29 +13,19 @@
 
 set -x
 
-# ==========================================
-# 1. ENVIRONMENT SETUP
-# ==========================================
-echo "LOG: Setting PATH directly..."
+# 1. SETUP
 export CONDA_PREFIX="${HOME}/mambaforge/envs/nextflow"
 export PATH="${CONDA_PREFIX}/bin:$PATH"
 unset JAVA_HOME
-
-echo "LOG: Verifying Nextflow..."
 nextflow -v
 
-# ==========================================
-# 2. CACHE & STORAGE SETUP
-# ==========================================
+# 2. CACHE
 export XDG_RUNTIME_DIR="${HOME}/xdr"
 export NXF_SINGULARITY_CACHEDIR="${HOME}/singularity_cache"
 mkdir -p $XDG_RUNTIME_DIR $NXF_SINGULARITY_CACHEDIR
-
 WORK_DIR="$(pwd)/work"
 
-# ==========================================
-# 3. SAFETY LOCKS
-# ==========================================
+# 3. SAFETY
 export NXF_SINGULARITY_HOME_MOUNT=true
 unset LD_LIBRARY_PATH
 unset PYTHONPATH
@@ -43,38 +33,27 @@ unset R_LIBS
 unset R_LIBS_USER
 unset R_LIBS_SITE
 
-# ==========================================
-# 4. PIPELINE EXECUTION
-# ==========================================
-
-# --- FIX METADATA FORMATTING ---
+# 4. EXECUTION
 sed -i 's/\r//g' ANALYSIS/metadata.csv
 
-# --- SKIP STEPS 1 & 2 ---
-echo "LOG: Skipping Xengsort and RNA-Seq Alignment. Using existing matrices."
-
-# --- STEP 3: DIFFERENTIAL ABUNDANCE ---
 echo "RUNNING STEP 3: DIFFERENTIAL ABUNDANCE (EVOLUTION)"
-
-# Parameters are now strictly loaded from the YAML file to avoid conflicts
+# The Pipeline does all the math here!
 nextflow run nf-core/differentialabundance \
     -r 1.5.0 \
     -profile singularity \
     -params-file evolution_params.yaml \
     -w "${WORK_DIR}" \
     -ansi-log false \
-    -resume 
+    -resume
 
-
-# --- STEP 4: CUSTOM VISUALIZATION ---
-echo "RUNNING STEP 4: KITCHEN SINK + EVOLUTION"
+# 5. VISUALIZATION (PURE VIZ)
+echo "RUNNING STEP 4: KITCHEN SINK (VISUALIZATION ONLY)"
 
 CONTAINER="docker://go2432/bioconductor:latest"
 IMG_PATH="${NXF_SINGULARITY_CACHEDIR}/go2432-bioconductor.sif"
 
 RESULTS_DIR="ANALYSIS/results_evolution"
 OUTPUT_PREFIX="ANALYSIS/results_evolution/plots/Evolution"
-COUNTS_FILE="ANALYSIS/results_human_final/star_salmon/salmon.merged.gene_counts.tsv"
 METADATA_FILE="ANALYSIS/metadata.csv"
 CONTRASTS_FILE="ANALYSIS/contrasts.csv"
 GMT_FILE="ANALYSIS/refs/pathways/combined_human.gmt"
@@ -83,31 +62,27 @@ if [[ ! -f "$IMG_PATH" ]]; then
     singularity pull "$IMG_PATH" "$CONTAINER"
 fi
 
+# R Arguments: <results_dir> <out_prefix> <meta> <contrasts> <gmt>
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" Rscript plot_evolution_kitchen_sink.R \
     "$RESULTS_DIR" \
     "$OUTPUT_PREFIX" \
-    "$COUNTS_FILE" \
     "$METADATA_FILE" \
     "$CONTRASTS_FILE" \
     "$GMT_FILE"
 
-# --- STEP 5: FINAL MULTIQC AGGREGATION ---
-echo "RUNNING STEP 5: FINAL MULTIQC AGGREGATION"
-
+# 6. MULTIQC
+echo "RUNNING STEP 5: FINAL MULTIQC"
 cat << 'CONFIG' > mqc_config.yaml
-# mqc_config.yaml
 disable_version_detection: true
 sections:
   software_versions:
     hide: true
-
 custom_content:
   order:
     - pathway_analysis
 CONFIG
 
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
-
 singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
     /data/ANALYSIS/results_evolution \
     /data/ANALYSIS/results_human_final \
