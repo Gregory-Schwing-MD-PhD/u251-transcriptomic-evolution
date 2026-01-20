@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # ------------------------------------------------------------------------------
-# PCA.R: Publication PCA (Nudged Labels), 3D Trajectory, & AI Prompts
+# PCA.R: Publication PCA (Hardcoded Positions, Clean Labels, Correct Legends)
 # ------------------------------------------------------------------------------
 
 suppressPackageStartupMessages({
@@ -11,10 +11,10 @@ suppressPackageStartupMessages({
     library(ggrepel)
     library(EnsDb.Hsapiens.v86)
     library(GSVA)
-    library(scatterplot3d) 
     library(data.table)
     library(GSEABase)
     library(tidyr)
+    library(clusterProfiler)
 })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -29,6 +29,7 @@ output_prefix <- args[4]
 dir.create(dirname(output_prefix), showWarnings = FALSE, recursive = TRUE)
 
 save_plot <- function(plot_obj, filename_base, w=10, h=8) {
+    if (!grepl("_mqc$", filename_base)) filename_base <- paste0(filename_base, "_mqc")
     pdf(paste0(filename_base, ".pdf"), width=w, height=h)
     print(plot_obj)
     dev.off()
@@ -65,95 +66,112 @@ gbm_sigs <- list(
     Proneural   = c("PDGFRA", "IDH1", "OLIG2", "SOX2", "NKX2-2", "OLIG1", "TP53"),
     Neural      = c("NEFL", "GABRA1", "SYT1", "SLC12A5", "MBP", "GABRG2")
 )
+
+# Run GSVA
 gsva_sub <- gsva(mat_vst, gbm_sigs, method="gsva", kcdf="Gaussian", verbose=FALSE)
 
+# Normalize scores to percentages for labelling
+gsva_norm <- apply(gsva_sub, 2, function(x) {
+    x_pos <- x - min(x) + 0.1
+    return(round((x_pos / sum(x_pos)) * 100, 1))
+})
+
 # ==============================================================================
-# 2. PCA WITH CENTER-NUDGED LABELS (PUBLICATION STYLE)
+# 2. PCA WITH HARDCODED LABEL POSITIONS
 # ==============================================================================
 pca <- prcomp(t(mat_sig))
-pcaData <- data.frame(PC1=pca$x[,1], PC2=pca$x[,2], Sample=rownames(meta), Class=meta$Classification)
+
+pcaData <- data.frame(
+    PC1=pca$x[,1], 
+    PC2=pca$x[,2], 
+    PC3=pca$x[,3], 
+    Sample=rownames(meta), 
+    Class=meta$Classification
+)
 pcaData$Dominant_Subtype <- apply(gsva_sub, 2, function(x) rownames(gsva_sub)[which.max(x)])
 
-# Calculate Global Center & Centroids
-global_center_x <- mean(pcaData$PC1)
-global_center_y <- mean(pcaData$PC2)
+# A. Calculate Class Centroids (Keep for arrows)
 centroids <- aggregate(cbind(PC1, PC2) ~ Class, data=pcaData, FUN=mean)
+centroids <- centroids[order(centroids$Class),]
 
-# Nudge labels 50% towards global center
-nudge_factor <- 0.5 
-centroids$Label_X <- centroids$PC1 + (global_center_x - centroids$PC1) * nudge_factor
-centroids$Label_Y <- centroids$PC2 + (global_center_y - centroids$PC2) * nudge_factor
+# B. Hardcoded Label Coordinates (User Requested)
+centroids$Label_X <- NA
+centroids$Label_Y <- NA
+
+# Culture: -20, 0
+centroids[centroids$Class == "Culture_U2", "Label_X"] <- -20
+centroids[centroids$Class == "Culture_U2", "Label_Y"] <- 0
+
+# Primary: -4, 0
+centroids[centroids$Class == "Primary_U2", "Label_X"] <- -4
+centroids[centroids$Class == "Primary_U2", "Label_Y"] <- 0
+
+# Recurrent: -4, 10
+centroids[centroids$Class == "Recurrent_U2", "Label_X"] <- -4
+centroids[centroids$Class == "Recurrent_U2", "Label_Y"] <- 10
+
+# C. Generate Rich Labels (Clean Name + Subtype %)
+avg_comp <- as.data.frame(t(gsva_norm))
+avg_comp$Class <- meta[rownames(avg_comp), "Classification"]
+comp_summ <- avg_comp %>% group_by(Class) %>% summarise(across(everything(), mean))
+
+centroids$Label <- apply(centroids, 1, function(row) {
+    cls <- row["Class"]
+    # CLEAN NAME: Remove _U2 suffix
+    clean_name <- sub("_U2", "", cls)
+    
+    vals <- comp_summ[comp_summ$Class == cls, -1]
+    pcts <- paste(names(vals), paste0(round(as.numeric(vals),0), "%"), sep=":", collapse="\n")
+    paste0(clean_name, "\n", pcts)
+})
 
 arrow_data <- data.frame(x_start = centroids$PC1[-nrow(centroids)], y_start = centroids$PC2[-nrow(centroids)],
                          x_end = centroids$PC1[-1], y_end = centroids$PC2[-1])
 
-# Colors for Publication (Distinct High Contrast)
-pub_colors <- c("Culture_U2"="#1B9E77", "Primary_U2"="#D95F02", "Recurrent_U2"="#7570B3")
-subtype_colors <- c("Mesenchymal"="#E41A1C", "Proneural"="#377EB8", "Classical"="#4DAF4A", "Neural"="#984EA3")
+# D. Publication Colors
+subtype_colors <- c("Mesenchymal"="#E41A1C", "Proneural"="#377EB8", "Classical"="#4DAF4A", "Neural"="#984EA3", "Other/Unclassified"="grey70")
 
 p_pca <- ggplot(pcaData, aes(x=PC1, y=PC2)) +
+    # Trajectory Arrow (Connecting actual centroids, not labels)
     geom_segment(data=arrow_data, aes(x=x_start, y=y_start, xend=x_end, yend=y_end),
-                 arrow=arrow(length=unit(0.5,"cm"), type="closed"), color="grey60", size=2, inherit.aes=FALSE) +
+                 arrow=arrow(length=unit(0.5,"cm"), type="closed"), color="grey60", linewidth=2, inherit.aes=FALSE) +
     
-    # Points with strokes for clarity
+    # Points
     geom_point(aes(fill=Dominant_Subtype, shape=Class), size=9, alpha=0.9, color="black", stroke=1) +
     
-    # Nudged Centroid Labels
-    geom_label(data=centroids, aes(x=Label_X, y=Label_Y, label=Class),
-               color="black", fill="white", alpha=0.9, size=6, fontface="bold", inherit.aes=FALSE) +
+    # Labels at Hardcoded Positions
+    geom_label(data=centroids, aes(x=Label_X, y=Label_Y, label=Label),
+               color="black", fill="white", alpha=0.9, size=4, fontface="bold", inherit.aes=FALSE) +
     
-    # Manual Scales
     scale_fill_manual(values=subtype_colors, name="Subtype") +
-    scale_shape_manual(values=c(21, 24, 22)) +
+    scale_shape_manual(values=c(21, 24, 22), labels=function(x) sub("_U2", "", x)) +
     
-    # Publication Theme (Clean, No Grid)
-    theme_bw(base_size = 20) + 
+    # FIX: LEGEND OVERRIDES
+    guides(
+        # For 'shape' (Class), override fill to be black so shapes are visible
+        shape = guide_legend(override.aes = list(fill = "black")),
+        # For 'fill' (Subtype), override shape to be 21 (filled circle) so colors show
+        fill = guide_legend(override.aes = list(shape = 21, size = 6))
+    ) +
+
+    # Clean Theme
+    theme_bw(base_size = 18) + 
     theme(
         panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank(),
         axis.title.y = element_text(vjust = 3),
         axis.title.x = element_text(vjust = -1),
         legend.position = "right",
+        # INCREASED VERTICAL SPACING FOR LEGEND KEYS
+        legend.key.height = unit(1.2, "cm"),
         plot.margin = margin(10, 10, 10, 10)
     ) +
-    labs(title="Evolutionary Trajectory", x="PC1", y="PC2")
+    labs(title="Evolutionary Trajectory & Subtype Composition", x="PC1", y="PC2")
 
 save_plot(p_pca, paste0(output_prefix, "_PCA_Publication"), 10, 8)
 
 # ==============================================================================
-# 3. 3D TRAJECTORY
-# ==============================================================================
-data_3d <- as.data.frame(t(gsva_sub[c("Classical", "Neural", "Mesenchymal"), ]))
-data_3d$Class <- meta[rownames(data_3d), "Classification"]
-point_colors <- pub_colors[as.character(data_3d$Class)]
-
-pdf(paste0(output_prefix, "_3D_Subtype_Trajectory.pdf"), width=10, height=10)
-s3d <- scatterplot3d(data_3d$Classical, data_3d$Neural, data_3d$Mesenchymal,
-              pch=16, color=point_colors, size=2, type="h",
-              main="3D Subtype Evolution",
-              xlab="Classical Score", ylab="Neural Score", zlab="Mesenchymal Score",
-              grid=TRUE, box=FALSE) # Removed box for cleaner look
-legend(s3d$xyz.convert(max(data_3d$Classical), max(data_3d$Neural), min(data_3d$Mesenchymal)), 
-       legend = names(pub_colors), col = pub_colors, pch = 16, cex=1.5, bty="n")
-centroids_3d <- aggregate(cbind(Classical, Neural, Mesenchymal) ~ Class, data=data_3d, FUN=mean)
-s3d$points3d(centroids_3d$Classical, centroids_3d$Neural, centroids_3d$Mesenchymal, 
-             col="black", type="l", lwd=3, lty=2)
-dev.off()
-
-png(paste0(output_prefix, "_3D_Subtype_Trajectory.png"), width=10, height=10, units="in", res=300)
-s3d <- scatterplot3d(data_3d$Classical, data_3d$Neural, data_3d$Mesenchymal,
-              pch=16, color=point_colors, size=2, type="h",
-              main="3D Subtype Evolution",
-              xlab="Classical Score", ylab="Neural Score", zlab="Mesenchymal Score",
-              grid=TRUE, box=FALSE)
-legend(s3d$xyz.convert(max(data_3d$Classical), max(data_3d$Neural), min(data_3d$Mesenchymal)), 
-       legend = names(pub_colors), col = pub_colors, pch = 16, cex=1.5, bty="n")
-s3d$points3d(centroids_3d$Classical, centroids_3d$Neural, centroids_3d$Mesenchymal, 
-             col="black", type="l", lwd=3, lty=2)
-dev.off()
-
-# ==============================================================================
-# 4. GEMINI PROMPT GENERATION
+# 3. GEMINI PROMPT GENERATION
 # ==============================================================================
 loadings <- as.data.frame(pca$rotation[, 1:5])
 top_drivers <- list()
