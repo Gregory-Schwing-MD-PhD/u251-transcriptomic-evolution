@@ -171,22 +171,59 @@ top_var <- head(order(apply(mat_vst, 1, var), decreasing=TRUE), N_TOP_VARIABLE_G
 mat_sig <- mat_vst[top_var, ]
 
 tryCatch({
+    # 1. Create Tree
     phylo_tree <- as.phylo(hclust(dist(t(mat_sig)), method="ward.D2"))
 
+    # 2. Root Tree
     if("C2B" %in% phylo_tree$tip.label) {
         rooted_tree <- root(phylo_tree, outgroup="C2B", resolve.root=TRUE)
     } else {
         rooted_tree <- phylo_tree
     }
 
-    pdf(paste0(output_prefix, "_Phylogenetic_Tree_mqc.pdf"), width=9, height=8)
-    plot(rooted_tree, main="", type="phylogram", edge.width=2, cex=1.0)
+    # 3. Define Colors (Culture=Blue, Primary=Orange, Recurrent=Red)
+    # We map the tip labels to the metadata to ensure the right sample gets the right color
+    group_colors <- c("Culture" = "#1f77b4", "Primary" = "#ff7f0e", "Recurrent" = "#d62728")
+    
+    # Default to black; overwrite if metadata is found
+    tip_colors <- "black"
+    
+    # Check if col_data exists (standard DESeq2 script variable)
+    if (exists("col_data") && "Classification" %in% colnames(col_data)) {
+        # Reorder metadata to match the tree tip order
+        ordered_meta <- col_data[rooted_tree$tip.label, ]
+        # Map classification to hex codes
+        tip_colors <- group_colors[as.character(ordered_meta$Classification)]
+        # Handle any missing matches (safety fallback)
+        tip_colors[is.na(tip_colors)] <- "black"
+    }
+
+    # 4. Save PDF (Vector graphics)
+    pdf(paste0(output_prefix, "_Phylogenetic_Tree_mqc.pdf"), width=11, height=10)
+    plot(rooted_tree, main="Phylogenetic Tree (Rooted at C2B)", 
+         type="phylogram", edge.width=2, cex=1.0, 
+         tip.color = tip_colors, label.offset = 0.5)
+    # Add Legend if colors were applied
+    if (exists("col_data") && "Classification" %in% colnames(col_data)) {
+        legend("topright", legend=names(group_colors), fill=group_colors, bty="n", cex=0.8, title="Group")
+    }
     dev.off()
 
-    cat("  SUCCESS: Phylogenetic tree saved\n")
+    # 5. Save PNG (Raster graphics)
+    png(paste0(output_prefix, "_Phylogenetic_Tree_mqc.png"), width=11, height=10, units="in", res=300)
+    plot(rooted_tree, main="Phylogenetic Tree (Rooted at C2B)", 
+         type="phylogram", edge.width=2, cex=1.0, 
+         tip.color = tip_colors, label.offset = 0.5)
+    if (exists("col_data") && "Classification" %in% colnames(col_data)) {
+        legend("topright", legend=names(group_colors), fill=group_colors, bty="n", cex=0.8, title="Group")
+    }
+    dev.off()
+
+    cat("  SUCCESS: Phylogenetic tree saved (PDF + PNG)\n")
 }, error = function(e) {
     cat(paste0("  ERROR: Tree generation failed: ", e$message, "\n"))
 })
+
 
 # ==============================================================================
 # 3. PCA WITH GBM SUBTYPE CLASSIFICATION
@@ -339,8 +376,8 @@ tryCatch({
         column_split = meta$Classification,
         row_split = meta$Classification,
         col = colorRamp2(c(0.7, 0.85, 1), c("blue", "white", "red")),
-        show_row_names = FALSE,
-        show_column_names = FALSE,
+        show_row_names = TRUE,
+        show_column_names = TRUE,
         border = TRUE,
         column_title = NULL,
         row_title = NULL
@@ -359,7 +396,7 @@ tryCatch({
         column_split = meta$Classification,
         cluster_columns = TRUE,
         cluster_rows = FALSE,
-        show_column_names = FALSE,
+        show_column_names = TRUE,
         col = colorRamp2(c(0, 50, 100), c("blue", "white", "red")),
         border = TRUE,
         column_title = NULL,
@@ -370,6 +407,26 @@ tryCatch({
 }, error = function(e) {
     cat(paste0("  ERROR: Subtype signature heatmap failed: ", e$message, "\n"))
 })
+
+# Subtype signature stacked bar (added)
+tryCatch({
+    gsva_long <- as.data.frame(gsva_norm) %>%
+        tibble::rownames_to_column("Subtype") %>%
+        pivot_longer(-Subtype, names_to = "Sample", values_to = "Score") %>%
+        left_join(meta %>% tibble::rownames_to_column("Sample"), by = "Sample")
+
+    p_subtype_bar <- ggplot(gsva_long, aes(x = Sample, y = Score, fill = Subtype)) +
+        geom_bar(stat = "identity", width = 0.9) +
+        facet_grid(~ Classification, scales = "free_x", space = "free_x") +
+        theme_bw(base_size = 12) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+        labs(x = NULL, y = "Subtype score (%)", fill = "Subtype")
+
+    save_plot(p_subtype_bar, paste0(output_prefix, "_SubtypeSignatures_BAR_mqc"), 12, 6)
+}, error = function(e) {
+    cat(paste0("  ERROR: Subtype stacked bar failed: ", e$message, "\n"))
+})
+
 
 # ==============================================================================
 # 5. CONTRAST-SPECIFIC VISUALIZATIONS
@@ -502,7 +559,7 @@ for(i in 1:nrow(contrasts)) {
                     heatmap_mat,
                     name = "Z-score",
                     column_split = meta$Classification,
-                    show_column_names = FALSE,
+                    show_column_names = TRUE,
                     cluster_columns = TRUE,
                     cluster_rows = TRUE,
                     show_row_names = TRUE,
@@ -593,13 +650,19 @@ for(i in 1:nrow(contrasts)) {
                      row.names=FALSE)
 
             # Generate prompt summary
+            n_up <- sum(res_df$padj < PADJ_CUTOFF & res_df$log2FoldChange > LOG2FC_CUTOFF, na.rm = TRUE)
+            n_dn <- sum(res_df$padj < PADJ_CUTOFF & res_df$log2FoldChange < -LOG2FC_CUTOFF, na.rm = TRUE)
+
             top_up <- head(gsea_out@result[gsea_out@result$NES > 0, "ID"], 5)
             top_dn <- head(gsea_out@result[gsea_out@result$NES < 0, "ID"], 5)
+
             prompt_summary[[cid]] <- paste0(
                 "Contrast ", cid, ":\n",
-                "- Top Up: ", paste(top_up, collapse=", "), "\n",
-                "- Top Dn: ", paste(top_dn, collapse=", "), "\n"
+                "- Up genes: ", n_up, ", Down genes: ", n_dn, "\n",
+                "- Top Up pathways: ", paste(top_up, collapse = ", "), "\n",
+                "- Top Down pathways: ", paste(top_dn, collapse = ", "), "\n"
             )
+
 
             # Calculate term similarity
             gsea_out <- pairwise_termsim(gsea_out)
@@ -610,7 +673,7 @@ for(i in 1:nrow(contrasts)) {
                 facet_grid(.~.sign) +
                 labs(title=NULL)
             save_plot(p_dot, paste0(output_prefix, "_GSEA_Dot_", cid, "_mqc"),
-                     12.5, 10.5)
+                     12.5, 11.5)
 
             # Enrichment map
             tryCatch({
@@ -619,7 +682,7 @@ for(i in 1:nrow(contrasts)) {
                                   cex.params=list(category_label=0.7)) +
                     labs(title=NULL)
                 save_plot(p_emap, paste0(output_prefix, "_GSEA_Emap_", cid, "_mqc"),
-                         7, 6)
+                         9, 8)
             }, error=function(e) {
                 cat(paste0("    WARNING: Emap plot failed: ", e$message, "\n"))
             })
@@ -633,7 +696,7 @@ for(i in 1:nrow(contrasts)) {
                     base_size = 11
                 )
                 save_plot(p_running, paste0(output_prefix, "_GSEA_Running_", cid, "_mqc"),
-                         10, 8)
+                         12, 10)
             }, error=function(e) {
                 cat(paste0("    WARNING: Running score plot failed: ", e$message, "\n"))
             })
@@ -649,7 +712,7 @@ for(i in 1:nrow(contrasts)) {
                 ) +
                 labs(title = NULL)
                 save_plot(p_cnet, paste0(output_prefix, "_GSEA_Network_", cid, "_mqc"),
-                         10, 10)
+                         14, 14)
             }, error=function(e) {
                 cat(paste0("    WARNING: Network plot failed: ", e$message, "\n"))
             })
