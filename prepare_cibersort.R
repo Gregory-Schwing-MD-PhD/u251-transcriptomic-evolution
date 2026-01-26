@@ -4,6 +4,7 @@ suppressPackageStartupMessages({
     library(data.table)
     library(dplyr)
     library(tibble)
+    library(stringr) # Added for text cleaning
 })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -19,7 +20,7 @@ if (!file.exists(neftel_meta_path)) stop("Metadata file not found!")
 # Read as character to safely handle the "TYPE" row
 neftel_meta <- fread(neftel_meta_path, colClasses = "character", fill=TRUE)
 
-# Remove the "TYPE" row
+# Remove the "TYPE" row if present
 if (neftel_meta[[1]][1] == "TYPE") {
     print("Detected 'TYPE' row. Removing it.")
     neftel_meta <- neftel_meta[-1, ]
@@ -45,13 +46,13 @@ tumor_scores <- tumor_cells %>%
 
 # Assign Dominant State
 assign_state <- function(r) {
-    # unname() prevents "AC-like.AClike" labels
     s_mes <- max(unname(r["MESlike1"]), unname(r["MESlike2"]), na.rm=TRUE)
     s_npc <- max(unname(r["NPClike1"]), unname(r["NPClike2"]), na.rm=TRUE)
     s_ac  <- unname(r["AClike"])
     s_opc <- unname(r["OPClike"])
     
-    scores <- c("MES-like"=s_mes, "NPC-like"=s_npc, "AC-like"=s_ac, "OPC-like"=s_opc)
+    # CRITICAL FIX: Use underscores, not hyphens
+    scores <- c("MES_like"=s_mes, "NPC_like"=s_npc, "AC_like"=s_ac, "OPC_like"=s_opc)
     return(names(which.max(scores)))
 }
 
@@ -70,19 +71,19 @@ if (grepl("\\.gz$", neftel_expr_path)) {
 } else {
     neftel_expr <- fread(neftel_expr_path)
 }
-colnames(neftel_expr)[1] <- "GENE"
+colnames(neftel_expr)[1] <- "Gene" # Strict requirement for CIBERSORTx
 
 # Intersect cells
 common_cells <- intersect(valid_cells, colnames(neftel_expr))
 if (length(common_cells) == 0) stop("CRITICAL: No matching cells between metadata and expression.")
 
 # Subset Expression
-neftel_clean <- neftel_expr %>% select(GENE, all_of(common_cells))
+neftel_clean <- neftel_expr %>% select(Gene, all_of(common_cells))
 
 # Convert to Linear TPM (2^x - 1)
 mat_data <- as.matrix(neftel_clean[,-1])
 mat_linear <- (2^mat_data) - 1
-final_ref <- cbind(Gene = neftel_clean$GENE, as.data.frame(mat_linear))
+final_ref <- cbind(Gene = neftel_clean$Gene, as.data.frame(mat_linear))
 
 # Write Reference
 fwrite(final_ref, "refsample.txt", sep="\t", quote=FALSE)
@@ -97,7 +98,7 @@ fwrite(phenotypes, "phenotypes.txt", sep="\t", col.names=FALSE, quote=FALSE)
 print("LOG: Reference Prepared Successfully.")
 
 
-# --- 3. PREPARE MIXTURE (FIXED) ---
+# --- 3. PREPARE MIXTURE ---
 print("LOG: Loading U251 Data...")
 u251 <- fread(u251_tpm_path)
 
@@ -115,11 +116,11 @@ if ("gene_name" %in% cols) {
 
 print(paste("Using gene column:", gene_col))
 
-# Robust Selection (Rename strictly)
+# Robust Selection
 u251_final <- u251 %>%
   select(all_of(gene_col), where(is.numeric)) %>%
-  rename(gene_name = all_of(gene_col)) %>%
-  group_by(gene_name) %>%
+  rename(Gene = all_of(gene_col)) %>% # Rename to Gene to match Ref
+  group_by(Gene) %>%
   summarise(across(everything(), sum))
 
 fwrite(u251_final, "mixture.txt", sep="\t", quote=FALSE)
