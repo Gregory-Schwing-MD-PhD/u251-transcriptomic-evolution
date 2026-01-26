@@ -13,8 +13,15 @@ u251_tpm_path    <- args[3]
 
 print("LOG: Loading Neftel Data...")
 
-# --- 1. PREPARE REFERENCE (Single Cell) ---
-neftel_expr <- fread(neftel_expr_path)
+# --- FIX: Handle .gz files using system command (Bypasses missing R.utils) ---
+if (grepl("\\.gz$", neftel_expr_path)) {
+    print(paste("Detected GZ file. Using system gunzip for:", neftel_expr_path))
+    # 'cmd' argument tells fread to run a shell command instead of opening file directly
+    neftel_expr <- fread(cmd = paste("gunzip -c", neftel_expr_path))
+} else {
+    neftel_expr <- fread(neftel_expr_path)
+}
+
 neftel_meta <- fread(neftel_meta_path)
 
 # Filter for malignant cells (MES, AC, OPC, NPC)
