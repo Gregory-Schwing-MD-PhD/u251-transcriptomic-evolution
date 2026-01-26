@@ -2,36 +2,22 @@
 
 suppressPackageStartupMessages({
     library(ggplot2); library(dplyr); library(tidyr); library(readr)
-    library(ggpubr); library(RColorBrewer); library(ComplexHeatmap); library(circlize)
-    library(tibble)
+    library(ggpubr); library(RColorBrewer); library(tibble)
 })
 
 # --- UTILS ---
 save_plot <- function(plot_obj, filename_base, w=9, h=8) {
     tryCatch({
-        if (inherits(plot_obj, "Heatmap")) {
-            pdf(paste0(filename_base, ".pdf"), width=w, height=h)
-            draw(plot_obj)
-            dev.off()
-            png(paste0(filename_base, ".png"), width=w, height=h, units="in", res=300)
-            draw(plot_obj)
-            dev.off()
-        } else {
-            ggsave(paste0(filename_base, ".pdf"), plot_obj, width=w, height=h)
-            ggsave(paste0(filename_base, ".png"), plot_obj, width=w, height=h, dpi=300, bg="white")
-        }
+        ggsave(paste0(filename_base, ".pdf"), plot_obj, width=w, height=h)
+        ggsave(paste0(filename_base, ".png"), plot_obj, width=w, height=h, dpi=300, bg="white")
         cat(paste0("SUCCESS: Saved ", basename(filename_base), "\n"))
-        return(TRUE)
     }, error = function(e) {
         cat(paste0("ERROR: Failed to save ", basename(filename_base), ": ", e$message, "\n"))
-        return(FALSE)
     })
 }
 
 # --- MAIN ---
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 3) stop("Usage: script.R <Results.txt> <Metadata.csv> <OutPrefix>")
-
 cib_path  <- args[1]
 meta_path <- args[2]
 out_prefix <- args[3]
