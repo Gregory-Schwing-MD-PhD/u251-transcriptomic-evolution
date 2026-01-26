@@ -13,60 +13,73 @@ u251_tpm_path    <- args[3]
 
 print("LOG: Starting CIBERSORTx Preparation...")
 
-# --- 1. LOAD METADATA & FIX HEADER ---
+# --- 1. LOAD METADATA & CALCULATE STATES ---
 if (!file.exists(neftel_meta_path)) stop("Metadata file not found!")
 
-# Read metadata (fill=TRUE handles ragged rows if any)
-neftel_meta <- fread(neftel_meta_path, fill=TRUE)
+# Read as character to safely handle the "TYPE" row
+neftel_meta <- fread(neftel_meta_path, colClasses = "character", fill=TRUE)
 
-# CRITICAL FIX: Remove the "TYPE" row if it exists
+# Remove the "TYPE" row
 if (neftel_meta[[1]][1] == "TYPE") {
-    print("Detected Single Cell Portal 'TYPE' row. Removing it.")
+    print("Detected 'TYPE' row. Removing it.")
     neftel_meta <- neftel_meta[-1, ]
 }
 
-# Ensure the column used for linking is called "NAME"
-if (!"NAME" %in% colnames(neftel_meta)) {
-    print("WARNING: 'NAME' column not found. Using first column as Sample ID.")
-    colnames(neftel_meta)[1] <- "NAME"
+if (!"NAME" %in% colnames(neftel_meta)) colnames(neftel_meta)[1] <- "NAME"
+
+print("LOG: Processing Cell States...")
+
+# Filter for Malignant Cells
+tumor_cells <- neftel_meta %>% filter(CellAssignment == "Malignant")
+if (nrow(tumor_cells) == 0) stop("CRITICAL: No cells found with CellAssignment == 'Malignant'")
+
+# Score Columns
+score_cols <- c("MESlike1", "MESlike2", "AClike", "OPClike", "NPClike1", "NPClike2")
+missing_cols <- setdiff(score_cols, colnames(tumor_cells))
+if (length(missing_cols) > 0) stop("Cannot calculate states; missing score columns.")
+
+# Convert to numeric
+tumor_scores <- tumor_cells %>%
+  select(NAME, all_of(score_cols)) %>%
+  mutate(across(all_of(score_cols), as.numeric))
+
+# Assign Dominant State
+assign_state <- function(r) {
+    # unname() prevents "AC-like.AClike" labels
+    s_mes <- max(unname(r["MESlike1"]), unname(r["MESlike2"]), na.rm=TRUE)
+    s_npc <- max(unname(r["NPClike1"]), unname(r["NPClike2"]), na.rm=TRUE)
+    s_ac  <- unname(r["AClike"])
+    s_opc <- unname(r["OPClike"])
+    
+    scores <- c("MES-like"=s_mes, "NPC-like"=s_npc, "AC-like"=s_ac, "OPC-like"=s_opc)
+    return(names(which.max(scores)))
 }
 
-# Filter for malignant cells (MES, AC, OPC, NPC)
-# We look at 'CellAssignment'
-malignant_cells <- neftel_meta %>%
-  filter(CellAssignment %in% c("MES-like", "AC-like", "OPC-like", "NPC-like")) %>%
-  pull(NAME)
+states <- apply(tumor_scores[, -1], 1, assign_state)
+tumor_cells$ComputedState <- states
 
-print(paste("Malignant Cells Selected:", length(malignant_cells)))
+print("Cell State Distribution:")
+print(table(tumor_cells$ComputedState))
 
-if (length(malignant_cells) == 0) {
-    stop("CRITICAL ERROR: No cells matched. Check if 'CellAssignment' column exists.")
-}
+valid_cells <- tumor_cells$NAME
 
 # --- 2. LOAD EXPRESSION ---
 print("LOG: Loading Expression Data...")
-# Handle GZ files via system command
 if (grepl("\\.gz$", neftel_expr_path)) {
     neftel_expr <- fread(cmd = paste("gunzip -c", neftel_expr_path))
 } else {
     neftel_expr <- fread(neftel_expr_path)
 }
-
-# Select Genes and Cells
-# Force first column to be "Gene"
 colnames(neftel_expr)[1] <- "GENE"
 
-# Intersect cells (Ensure we only ask for cells that exist in Expression)
-valid_cells <- intersect(malignant_cells, colnames(neftel_expr))
-print(paste("Cells found in Expression Matrix:", length(valid_cells)))
+# Intersect cells
+common_cells <- intersect(valid_cells, colnames(neftel_expr))
+if (length(common_cells) == 0) stop("CRITICAL: No matching cells between metadata and expression.")
 
-if (length(valid_cells) == 0) stop("CRITICAL ERROR: Metadata IDs do not match Expression columns.")
+# Subset Expression
+neftel_clean <- neftel_expr %>% select(GENE, all_of(common_cells))
 
-# Subset
-neftel_clean <- neftel_expr %>% select(GENE, all_of(valid_cells))
-
-# Convert log2(TPM+1) -> Linear TPM
-# Formula: 2^x - 1
+# Convert to Linear TPM (2^x - 1)
 mat_data <- as.matrix(neftel_clean[,-1])
 mat_linear <- (2^mat_data) - 1
 final_ref <- cbind(Gene = neftel_clean$GENE, as.data.frame(mat_linear))
@@ -75,27 +88,37 @@ final_ref <- cbind(Gene = neftel_clean$GENE, as.data.frame(mat_linear))
 fwrite(final_ref, "refsample.txt", sep="\t", quote=FALSE)
 
 # Write Phenotypes
-phenotypes <- neftel_meta %>%
-  filter(NAME %in% valid_cells) %>%
-  select(NAME, CellAssignment)
+phenotypes <- tumor_cells %>%
+  filter(NAME %in% common_cells) %>%
+  select(NAME, ComputedState)
   
 fwrite(phenotypes, "phenotypes.txt", sep="\t", col.names=FALSE, quote=FALSE)
 
 print("LOG: Reference Prepared Successfully.")
 
-# --- 3. PREPARE MIXTURE ---
+
+# --- 3. PREPARE MIXTURE (FIXED) ---
 print("LOG: Loading U251 Data...")
 u251 <- fread(u251_tpm_path)
 
-# Handle different column names for gene symbol
-gene_col <- grep("gene_name|symbol|gene_id", colnames(u251), ignore.case=TRUE, value=TRUE)[1]
-if (is.na(gene_col)) gene_col <- colnames(u251)[1] # Fallback to col 1
+# Smart Column Detection
+cols <- colnames(u251)
+if ("gene_name" %in% cols) {
+    gene_col <- "gene_name"
+} else if ("symbol" %in% cols) {
+    gene_col <- "symbol"
+} else if ("gene_id" %in% cols) {
+    gene_col <- "gene_id"
+} else {
+    gene_col <- cols[1]
+}
 
-print(paste("Using U251 Gene Column:", gene_col))
-colnames(u251)[which(colnames(u251) == gene_col)] <- "gene_name"
+print(paste("Using gene column:", gene_col))
 
+# Robust Selection (Rename strictly)
 u251_final <- u251 %>%
-  select(gene_name, where(is.numeric)) %>%
+  select(all_of(gene_col), where(is.numeric)) %>%
+  rename(gene_name = all_of(gene_col)) %>%
   group_by(gene_name) %>%
   summarise(across(everything(), sum))
 
