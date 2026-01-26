@@ -1,0 +1,30 @@
+library(data.table)
+library(dplyr)
+
+# 1. Load Data
+# (Assuming you downloaded the files from Single Cell Portal)
+# Note: You might need to unzip the expression file first
+expr <- fread("IDHwtGBM.processed.SS2.logTPM.txt")
+meta <- fread("IDHwt.GBM.Metadata.SS2.txt")
+
+# 2. Assign "Dominant State"
+# The Neftel metadata usually has columns like 'score_MES', 'score_AC', etc.
+# If it only has the 2D coordinates (MetaModule1, MetaModule2), you can use the
+# assignments provided in the 'CellAssignment' column if it exists.
+# Let's assume there is a 'CellAssignment' column (common in SCP downloads).
+
+# Filter for only malignant cells (exclude immune/stroma for the Tumor Signature)
+malignant_meta <- meta %>% 
+  filter(CellAssignment %in% c("MES-like", "AC-like", "OPC-like", "NPC-like"))
+
+# 3. Align Expression Matrix to Malignant Cells
+# Keep only cells that are in our filtered metadata
+clean_expr <- expr %>% select(c("GENE", malignant_meta$NAME))
+
+# 4. Export for CIBERSORTx
+# Reference Sample File
+write.table(clean_expr, "Neftel_RefSample.txt", sep="\t", quote=F, row.names=F)
+
+# Phenotype Classes File
+pheno_export <- malignant_meta %>% select(NAME, CellAssignment)
+write.table(pheno_export, "Neftel_Phenotypes.txt", sep="\t", quote=F, row.names=F, col.names=F)
