@@ -14,16 +14,12 @@ RUN apt-get update && apt-get install -y \
 # ------------------------------------------------------------------------------
 # LAYER 2: Human Databases
 # ------------------------------------------------------------------------------
-# 2a. Standard Entrez Database (Cached from previous build)
 RUN R -e "BiocManager::install('org.Hs.eg.db')"
-
 
 # ------------------------------------------------------------------------------
 # LAYER 3: Rat Databases
 # ------------------------------------------------------------------------------
-# 3a. Standard Entrez Database (Cached from previous build)
 RUN R -e "BiocManager::install('org.Rn.eg.db')"
-
 
 # ------------------------------------------------------------------------------
 # LAYER 4: Core Computational Engines & Orthology
@@ -78,35 +74,31 @@ RUN R -e "install.packages(c( \
     'ggrepel' \
     ), repos='http://cran.rstudio.com/')"
 
-# 2b. Ensembl Native Database (New Layer)
 RUN R -e "BiocManager::install('EnsDb.Hsapiens.v86')"
-# 3b. Ensembl Native Database (New Layer)
 RUN R -e "BiocManager::install('EnsDb.Rnorvegicus.v79')"
 
 # ------------------------------------------------------------------------------
-# LAYER 8: Final Additions (3D Plotting & Tidy Tools)
+# LAYER 8: Final Additions
 # ------------------------------------------------------------------------------
-# Added specifically for PCA.R and Kitchen Sink v11
-# scatterplot3d -> For the 3D trajectory plot
-# tidyr -> For data reshaping in newer scripts
 RUN R -e "install.packages(c( \
     'scatterplot3d', \
     'tidyr' \
     ), repos='http://cran.rstudio.com/')"
 
 # ------------------------------------------------------------------------------
-# LAYER 9: PPI Network & File Handling (Fixes for v4 Pipeline)
+# LAYER 9: PPI Network
 # ------------------------------------------------------------------------------
-# R.utils -> Required by data.table::fread to read .gz files directly
-# ggraph  -> Required for the new STRING network visualizations
-# igraph  -> Explicit install for network analysis
 RUN R -e "install.packages(c( \
     'R.utils', \
     'ggraph', \
     'igraph' \
     ), repos='http://cran.rstudio.com/')"
 
-# DOSE -> Dependency for clusterProfiler, added explicitly to prevent missing errors
 RUN R -e "BiocManager::install('DOSE')"
+
+# ------------------------------------------------------------------------------
+# LAYER 10: Excel Generation (NEW)
+# ------------------------------------------------------------------------------
+RUN R -e "install.packages('openxlsx', repos='http://cran.rstudio.com/')"
 
 WORKDIR /data
