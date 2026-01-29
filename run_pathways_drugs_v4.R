@@ -1,121 +1,111 @@
 #!/usr/bin/env Rscript
 # run_pathways_drugs_v4.R
-# Final Pipeline: STRING Local PPI, Multi-DB GSEA, DSigDB Drug Discovery
-# Output: _mqc.pdf/png plots and _mqc.html report for MultiQC integration.
+# FIXED: Replaced S4 accessor '@names' with standard 'names()' to prevent crash.
 
 suppressPackageStartupMessages({
-    library(clusterProfiler); library(enrichplot); library(dplyr); library(ggplot2)
-    library(org.Hs.eg.db); library(igraph); library(stringr); library(GSEABase)
-    library(data.table); library(ggraph); library(DOSE); library(ComplexHeatmap)
+    library(ggplot2); library(dplyr); library(ape); library(ggrepel)
+    library(EnsDb.Hsapiens.v86); library(clusterProfiler); library(enrichplot)
+    library(GSVA); library(GSEABase); library(ComplexHeatmap); library(circlize)
+    library(data.table); library(tidyr); library(stringr); library(igraph); library(ggraph)
 })
 
-# Reproducibility
+# Global reproducibility
 set.seed(12345)
 
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
-PADJ_CUT <- 0.05
-LFC_CUT <- 1.0
-STRING_SCORE_CUT <- 700  # High Confidence Interaction (0-1000)
-TOP_HUBS_N <- 15         # Number of Hub Genes to label in network
+PADJ_CUTOFF <- 0.05
+LOG2FC_CUTOFF <- 1.0
+STRING_SCORE_CUT <- 700
+TOP_HUBS_N <- 15
 
 # ==============================================================================
-# REPORTING ENGINE (Markdown + HTML for MultiQC)
+# UTILITY FUNCTIONS
 # ==============================================================================
-# We accumulate text in a vector and write both MD and HTML at the end
+
+# 1. ROBUST MAPPING
+map_genes_to_symbols <- function(gene_ids, db = EnsDb.Hsapiens.v86) {
+    clean_ids <- sub("\\..*", "", gene_ids)
+    # Check if they are already symbols (heuristic)
+    if(mean(grepl("^ENSG", clean_ids)) < 0.1) return(clean_ids)
+    
+    symbols <- mapIds(db, keys=clean_ids, column="SYMBOL", keytype="GENEID", multiVals="first")
+    ifelse(is.na(symbols), clean_ids, symbols)
+}
+
+# 2. SAVE PLOT
+save_mqc <- function(plot_obj, filename_base, w=10, h=8) {
+    tryCatch({
+        if (inherits(plot_obj, "Heatmap")) {
+            pdf(paste0(filename_base, "_mqc.pdf"), width=w, height=h); draw(plot_obj); dev.off()
+            png(paste0(filename_base, "_mqc.png"), width=w, height=h, units="in", res=300); draw(plot_obj); dev.off()
+        } else {
+            ggsave(paste0(filename_base, "_mqc.pdf"), plot_obj, width=w, height=h)
+            ggsave(paste0(filename_base, "_mqc.png"), plot_obj, width=w, height=h, dpi=300, bg="white")
+        }
+    }, error = function(e) { cat("ERROR saving plot:", e$message, "\n") })
+}
+
+# 3. REPORTING
 report_content <- character()
-
 add_text <- function(header, content) {
-    # Store Markdown format
-    entry <- paste0("\n## ", header, "\n\n", content, "\n")
-    report_content <<- c(report_content, entry)
-}
-
-init_report <- function() {
-    report_content <<- c(paste0("# Integrated Transcriptomic Analysis\n**Date:** ", Sys.Date(), "\n"))
-    add_text("Methods Summary", 
-             "Differential expression analysis was performed using DESeq2. Pathway enrichment utilized GSEA against MSigDB Hallmark, C2 (Curated), KEGG, and GO databases. Drug candidates were identified via the DSigDB pharmacogenomic reference. PPI networks were constructed using STRING v12.0 (score > 0.7).")
-}
-
-write_reports <- function(prefix) {
-    # 1. Write Markdown (Standard)
-    md_file <- paste0(dirname(prefix), "/ANALYSIS_REPORT_FINAL.md")
-    writeLines(report_content, md_file)
-    
-    # 2. Write HTML Fragment (For MultiQC Custom Content)
-    # We strip the '#' to make it fit nicely in MultiQC
-    html_content <- report_content
-    html_content <- gsub("## ", "<h3>", html_content)
-    html_content <- gsub("\n", "<br>", html_content)
-    html_content <- paste0(html_content, "</h3>") # Close tags roughly
-    
-    # Wrap in a div for MultiQC
-    final_html <- c(
-        "",
-        "<div class='mqc-custom-content-section'>",
-        "<h2>Automated Interpretation Report</h2>",
-        paste(html_content, collapse="\n"),
-        "</div>"
-    )
-    
-    html_file <- paste0(dirname(prefix), "/Analysis_Narrative_mqc.html")
-    writeLines(final_html, html_file)
-    message("Reports written to: ", md_file, " and ", html_file)
+    report_content <<- c(report_content, paste0("\n## ", header, "\n\n", content, "\n"))
 }
 
 # ==============================================================================
-# PLOT SAVER (The MQC Suffix Enforcer)
-# ==============================================================================
-save_mqc <- function(plot_obj, base_name, w=10, h=8) {
-    # PDF (Vector)
-    ggsave(paste0(base_name, "_mqc.pdf"), plot_obj, width=w, height=h)
-    # PNG (Bitmap for quick preview)
-    ggsave(paste0(base_name, "_mqc.png"), plot_obj, width=w, height=h, dpi=300, bg="white")
-}
-
-# ==============================================================================
-# SETUP & DATA LOADING
+# SETUP
 # ==============================================================================
 args <- commandArgs(trailingOnly=TRUE)
 if(length(args)<5) stop("Usage: script.R <vst> <results_dir> <gmt_dir> <string_dir> <out_prefix>")
 
 vst_file <- args[1]; results_dir <- args[2]; gmt_dir <- args[3]; string_dir <- args[4]; out_prefix <- args[5]
 
-# Initialize Report
-init_report()
+# Init Report
+report_content <<- c(paste0("# Integrated Transcriptomic Analysis\n**Date:** ", Sys.Date(), "\n"))
 
-# 1. LOAD STRING DATABASE (Fast FileReader)
-cat("LOG: Loading STRING Database (Local)...\n")
+# ==============================================================================
+# 1. LOAD STRING DATABASE (Local)
+# ==============================================================================
+cat("LOG: Loading STRING Database...\n")
 link_f <- list.files(string_dir, pattern="protein.links.*.txt.gz", full.names=TRUE)[1]
 info_f <- list.files(string_dir, pattern="protein.info.*.txt.gz", full.names=TRUE)[1]
 
-if(is.na(link_f) || is.na(info_f)) stop("CRITICAL: STRING database files not found in ", string_dir)
-
-string_map <- fread(info_f, select=c("string_protein_id", "preferred_name"))
+# Load Map
+string_map <- fread(info_f, select=c(1, 2))
 colnames(string_map) <- c("id", "symbol")
 sym2string <- string_map$id; names(sym2string) <- string_map$symbol
 string2sym <- string_map$symbol; names(string2sym) <- string_map$id
 
-cat("LOG: Loading Network Topology...\n")
+# Load Network
 string_net <- fread(link_f)
+if(ncol(string_net) >= 3) colnames(string_net)[1:3] <- c("protein1", "protein2", "combined_score")
 string_net <- string_net[combined_score >= STRING_SCORE_CUT]
 
-# 2. LOAD VST MATRIX
-cat("LOG: Loading Transcriptome...\n")
-vst <- as.matrix(read.table(vst_file, header=TRUE, row.names=1))
-try({
-    library(EnsDb.Hsapiens.v86)
-    if(grepl("^ENSG", rownames(vst)[1])) {
-        rownames(vst) <- mapIds(EnsDb.Hsapiens.v86, keys=sub("\\..*","",rownames(vst)), column="SYMBOL", keytype="GENEID", multiVals="first")
-    }
-}, silent=TRUE)
-vst <- as.data.frame(vst) %>% tibble::rownames_to_column("g") %>% 
-       filter(!is.na(g)) %>% group_by(g) %>% summarize(across(everything(),mean)) %>% 
-       tibble::column_to_rownames("g") %>% as.matrix()
+# ==============================================================================
+# 2. DATA LOADING & CLEANING
+# ==============================================================================
+cat("LOG: Loading VST Data...\n")
+mat_vst <- as.matrix(read.table(vst_file, header=TRUE, row.names=1, check.names=FALSE))
+
+# Map symbols using the robust function
+mapped_syms <- map_genes_to_symbols(rownames(mat_vst))
+mat_vst_sym <- mat_vst
+rownames(mat_vst_sym) <- mapped_syms
+
+# Handle duplicates by averaging
+mat_vst_sym <- as.data.frame(mat_vst_sym) %>%
+    tibble::rownames_to_column("symbol") %>%
+    dplyr::filter(!is.na(symbol)) %>%
+    group_by(symbol) %>%
+    summarise(across(everything(), mean)) %>%
+    tibble::column_to_rownames("symbol") %>%
+    as.matrix()
+
+cat(paste0("  Mapped to ", nrow(mat_vst_sym), " unique gene symbols\n"))
 
 # ==============================================================================
-# MAIN ANALYSIS LOOP
+# 3. CONTRAST LOOP
 # ==============================================================================
 contrasts <- list.files(file.path(results_dir, "tables/differential"), pattern=".results.tsv", full.names=TRUE)
 
@@ -123,42 +113,78 @@ for(f in contrasts) {
     cid <- sub(".deseq2.results.tsv", "", basename(f))
     cat(paste0("\nLOG: Processing Contrast: ", cid, "...\n"))
     
-    res <- read.table(f, header=TRUE)
-    if(!"symbol" %in% colnames(res)) {
-         try({res$symbol <- mapIds(EnsDb.Hsapiens.v86, keys=sub("\\..*","",rownames(res)), column="SYMBOL", keytype="GENEID", multiVals="first")}, silent=TRUE)
+    # Load Results
+    res_df <- read.table(f, header=TRUE, sep="\t", quote="")
+    
+    # Standardize ID column
+    if (grepl("^[0-9]+$", rownames(res_df)[1])) {
+        rownames(res_df) <- res_df$gene_id # Fallback if rownames are indices
     }
     
-    gene_list <- res %>% filter(!is.na(log2FoldChange), !is.na(symbol)) %>% 
-                 arrange(desc(log2FoldChange)) %>% pull(log2FoldChange, name=symbol)
+    # Add Symbols if missing (Using robust function)
+    if(!"symbol" %in% colnames(res_df)) {
+        res_df$symbol <- map_genes_to_symbols(rownames(res_df))
+    }
     
-    sig_genes <- res %>% filter(padj < PADJ_CUT, abs(log2FoldChange) > LFC_CUT) %>% pull(symbol)
-    sig_genes <- sig_genes[!is.na(sig_genes)]
+    # PREPARE GSEA LIST
+    gene_list <- res_df %>%
+        dplyr::filter(!is.na(log2FoldChange), !is.na(symbol), is.finite(log2FoldChange)) %>%
+        distinct(symbol, .keep_all = TRUE) %>%
+        arrange(desc(log2FoldChange)) %>%
+        pull(log2FoldChange, name = symbol)
     
-    add_text(paste0("Analysis: ", cid), paste0("Differential expression identified ", length(sig_genes), " significant genes."))
+    sig_genes <- res_df %>% dplyr::filter(padj < PADJ_CUTOFF, abs(log2FoldChange) > LOG2FC_CUTOFF) %>% pull(symbol)
+    sig_genes <- intersect(sig_genes, rownames(mat_vst_sym))
+    
+    add_text(cid, paste0("Differential analysis identified ", length(sig_genes), " significant genes."))
 
     # --------------------------------------------------------------------------
-    # A. PATHWAY ENRICHMENT (Multi-DB GSEA)
+    # A. MULTI-DATABASE GSEA LOOP
     # --------------------------------------------------------------------------
     gmts <- list.files(gmt_dir, pattern=".gmt", full.names=TRUE)
     
-    for(gmt in gmts) {
-        db_clean <- tools::file_path_sans_ext(basename(gmt))
-        if(grepl("dsigdb", db_clean) || grepl("string", db_clean)) next
+    for(gmt_path in gmts) {
+        db_name <- tools::file_path_sans_ext(basename(gmt_path))
         
-        cat(paste0("  > GSEA: ", db_clean, "\n"))
-        term2gene <- read.gmt(gmt)
-        ems <- GSEA(gene_list, TERM2GENE=term2gene, pvalueCutoff=1, verbose=FALSE, eps=1e-50)
+        # Skip special files for later
+        if(grepl("dsigdb", db_name) || grepl("string", db_name)) next
         
-        if(nrow(ems) > 0) {
-            p <- dotplot(ems, showCategory=12, split=".sign") + facet_grid(.~.sign) + 
-                 ggtitle(paste0(db_clean, ": ", cid)) + theme(axis.text.y = element_text(size=6))
+        cat(paste0("  > Running GSEA: ", db_name, "\n"))
+        
+        # Load GMT
+        gmt_data <- tryCatch(read.gmt(gmt_path), error=function(e) NULL)
+        if(is.null(gmt_data)) next
+        
+        # *** FIX IS HERE: Use names(gene_list) instead of gene_list@names ***
+        if(length(intersect(names(gene_list), gmt_data$gene)) < 5) {
+            cat("    [SKIP] Low overlap with gene list.\n")
+            next
+        }
+
+        # Run GSEA
+        gsea_out <- tryCatch({
+            GSEA(gene_list, TERM2GENE = gmt_data, pvalueCutoff = 1, verbose = FALSE, eps = 1e-50)
+        }, error = function(e) { return(NULL) })
+
+        if(!is.null(gsea_out) && nrow(gsea_out) > 0) {
+            # 1. Dotplot
+            p_dot <- dotplot(gsea_out, showCategory=15, split=".sign") + facet_grid(.~.sign) +
+                     ggtitle(paste0(db_name, ": ", cid)) + theme(axis.text.y = element_text(size=7))
+            save_mqc(p_dot, paste0(out_prefix, "_", cid, "_GSEA_Dot_", db_name))
             
-            # SAVE WITH _MQC SUFFIX
-            save_mqc(p, paste0(out_prefix, "_", cid, "_", db_clean))
-            write.csv(ems@result, paste0(out_prefix, "_", cid, "_", db_clean, ".csv"))
+            # 2. Enrichment Map
+            tryCatch({
+                gsea_sim <- pairwise_termsim(gsea_out)
+                p_emap <- emapplot(gsea_sim, showCategory=20, cex.params=list(category_label=0.6))
+                save_mqc(p_emap, paste0(out_prefix, "_", cid, "_GSEA_Emap_", db_name))
+            }, error=function(e){})
             
-            top <- ems@result %>% arrange(p.adjust) %>% head(1)
-            add_text(paste0("Enrichment (", db_clean, ")"),
+            # CSV Export
+            write.csv(gsea_out@result, paste0(out_prefix, "_", cid, "_", db_name, ".csv"))
+            
+            # Report Text
+            top <- gsea_out@result %>% arrange(p.adjust) %>% head(1)
+            add_text(paste0("Enrichment (", db_name, ")"), 
                      paste0("Top pathway: **", top$ID, "** (NES=", round(top$NES, 2), ")."))
         }
     }
@@ -167,29 +193,33 @@ for(f in contrasts) {
     # B. DRUG REPURPOSING (DSigDB)
     # --------------------------------------------------------------------------
     cat("  > Drug Discovery (DSigDB)...\n")
-    dsig_file <- list.files(gmt_dir, pattern="dsigdb", full.names=TRUE)[1]
+    dsig_path <- list.files(gmt_dir, pattern="dsigdb", full.names=TRUE)[1]
     
-    if(!is.na(dsig_file)) {
-        drug_ems <- GSEA(gene_list, TERM2GENE=read.gmt(dsig_file), pvalueCutoff=1, verbose=FALSE, eps=1e-50)
-        cands <- drug_ems@result %>% filter(NES < -1.5, p.adjust < 0.05) %>% arrange(p.adjust)
+    if(!is.na(dsig_path)) {
+        drug_gmt <- read.gmt(dsig_path)
         
-        if(nrow(cands) > 0) {
-            top_d <- cands$ID[1]
-            p <- dotplot(drug_ems, showCategory=10, split=".sign") + facet_grid(.~.sign) + ggtitle("Drug Candidates (DSigDB)")
+        drug_gsea <- tryCatch({
+            GSEA(gene_list, TERM2GENE = drug_gmt, pvalueCutoff = 1, verbose = FALSE, eps = 1e-50)
+        }, error=function(e) NULL)
+        
+        if(!is.null(drug_gsea)) {
+            cands <- drug_gsea@result %>% dplyr::filter(NES < -1.0, p.adjust < 0.05) %>% arrange(p.adjust)
             
-            # SAVE WITH _MQC SUFFIX
-            save_mqc(p, paste0(out_prefix, "_", cid, "_Drug_GSEA"))
-            
-            add_text("Pharmacogenomic Candidates",
-                     paste0("Analysis against the DSigDB identified **", top_d, "** as a primary candidate. ",
-                            "The tumor expression profile correlates negatively with this drug's signature (NES=", round(cands$NES[1], 2), ")."))
+            if(nrow(cands) > 0) {
+                p <- dotplot(drug_gsea, showCategory=10, split=".sign") + facet_grid(.~.sign) + ggtitle("DSigDB Drug Candidates")
+                save_mqc(p, paste0(out_prefix, "_", cid, "_Drug_Discovery"))
+                
+                top_d <- cands$ID[1]
+                add_text("Drug Candidates", 
+                         paste0("Top candidate: **", top_d, "** (NES=", round(cands$NES[1], 2), ")."))
+            }
         }
     }
 
     # --------------------------------------------------------------------------
-    # C. STRING PROTEIN-PROTEIN INTERACTION NETWORK
+    # C. STRING PPI NETWORKS
     # --------------------------------------------------------------------------
-    cat("  > Constructing STRING PPI Network...\n")
+    cat("  > PPI Network...\n")
     mapped_ids <- sym2string[sig_genes]
     mapped_ids <- mapped_ids[!is.na(mapped_ids)]
     
@@ -200,6 +230,7 @@ for(f in contrasts) {
             g <- graph_from_data_frame(sub_net, directed=FALSE)
             V(g)$string_id <- V(g)$name
             V(g)$name <- string2sym[V(g)$string_id]
+            
             deg <- degree(g)
             hubs <- names(sort(deg, decreasing=TRUE)[1:min(TOP_HUBS_N, length(deg))])
             
@@ -211,22 +242,22 @@ for(f in contrasts) {
                      geom_edge_link(alpha=0.2, color="grey70") + 
                      geom_node_point(aes(color=type, size=type)) + 
                      scale_color_manual(values=c("Hub"="#E41A1C", "Node"="#377EB8")) +
-                     scale_size_manual(values=c("Hub"=6, "Node"=2.5)) +
-                     geom_node_text(aes(label=ifelse(type=="Hub", name, "")), 
-                                    repel=TRUE, fontface="bold", color="black", bg.color="white", bg.r=0.15) +
-                     theme_void() + 
-                     ggtitle(paste0("STRING PPI Network: ", cid))
+                     scale_size_manual(values=c("Hub"=5, "Node"=2)) +
+                     geom_node_text(aes(label=ifelse(type=="Hub", name, "")), repel=TRUE, fontface="bold", bg.color="white") +
+                     theme_void() + ggtitle(paste0("STRING PPI: ", cid))
             
-            # SAVE WITH _MQC SUFFIX
-            save_mqc(p_net, paste0(out_prefix, "_", cid, "_STRING_PPI"))
-            
-            add_text("PPI Network Topology", 
-                        paste0("A high-confidence PPI network was constructed. ",
-                               "Topological analysis identified **", paste(hubs, collapse=", "), "** as the central regulatory hubs."))
+            save_mqc(p_net, paste0(out_prefix, "_", cid, "_PPI_Network"))
+            add_text("Protein Interaction Network", paste0("Identified Hub Genes: ", paste(hubs, collapse=", ")))
         }
     }
 }
 
-# 3. WRITE FINAL REPORTS
-write_reports(out_prefix)
-cat("\nLOG: Pipeline Complete. HTML Report and MQC Plots generated.\n")
+# Final HTML Report
+md_file <- paste0(dirname(out_prefix), "/ANALYSIS_REPORT_FINAL.md")
+writeLines(report_content, md_file)
+html_content <- paste0("<div class='mqc-custom-content-section'>", 
+                       paste(gsub("## ", "<h3>", gsub("\n", "<br>", report_content)), collapse="\n"), 
+                       "</div>")
+writeLines(html_content, paste0(dirname(out_prefix), "/Analysis_Narrative_mqc.html"))
+
+cat("\nLOG: Pipeline Complete.\n")

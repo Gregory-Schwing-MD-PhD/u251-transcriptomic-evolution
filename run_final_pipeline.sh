@@ -3,8 +3,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=48G
-#SBATCH --time=4:00:00
+#SBATCH --mem=24G
+#SBATCH --time=2:00:00
 #SBATCH --job-name=u251_final
 #SBATCH --output=final_analysis_%j.out
 #SBATCH --error=final_analysis_%j.err
