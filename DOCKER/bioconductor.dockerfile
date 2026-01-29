@@ -94,4 +94,19 @@ RUN R -e "install.packages(c( \
     'tidyr' \
     ), repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# LAYER 9: PPI Network & File Handling (Fixes for v4 Pipeline)
+# ------------------------------------------------------------------------------
+# R.utils -> Required by data.table::fread to read .gz files directly
+# ggraph  -> Required for the new STRING network visualizations
+# igraph  -> Explicit install for network analysis
+RUN R -e "install.packages(c( \
+    'R.utils', \
+    'ggraph', \
+    'igraph' \
+    ), repos='http://cran.rstudio.com/')"
+
+# DOSE -> Dependency for clusterProfiler, added explicitly to prevent missing errors
+RUN R -e "BiocManager::install('DOSE')"
+
 WORKDIR /data
