@@ -2,7 +2,7 @@
 set -e
 
 # ==============================================================================
-# SCRIPT: setup_refs.sh (Fixed: Uses Correct msigdbr Column Names)
+# SCRIPT: create_refs_final.sh (Includes STRING v12.0)
 # CONTEXT: Run INSIDE 'ANALYSIS'.
 # ==============================================================================
 
@@ -13,13 +13,15 @@ RAT_DIR="$BASE_DIR/rat"
 PATHWAY_ROOT="$BASE_DIR/pathways"
 PATHWAY_HUMAN="$PATHWAY_ROOT/human"
 PATHWAY_RAT="$PATHWAY_ROOT/rat"
+STRING_DIR="$PATHWAY_HUMAN/human_string"  # NEW: For PPI Networks
 RLIB_DIR="$BASE_DIR/R_libs"
 
-mkdir -p "$HUMAN_DIR" "$RAT_DIR" "$PATHWAY_HUMAN" "$PATHWAY_RAT" "$RLIB_DIR"
+mkdir -p "$HUMAN_DIR" "$RAT_DIR" "$PATHWAY_HUMAN" "$PATHWAY_RAT" "$STRING_DIR" "$RLIB_DIR"
 
 echo "========================================================"
 echo "Starting Reference Setup"
 echo "Human Pathways:   $PATHWAY_HUMAN"
+echo "STRING PPI DB:    $STRING_DIR"
 echo "Rat Pathways:     $PATHWAY_RAT"
 echo "========================================================"
 
@@ -48,7 +50,7 @@ check_valid_file() {
 # ==============================================================================
 # SECTIONS 1 & 2: GENOMES
 # ==============================================================================
-echo -e "\n[1/3] Processing Human Reference (GRCh38 - GENCODE v44)..."
+echo -e "\n[1/4] Processing Human Reference (GRCh38 - GENCODE v44)..."
 cd "$HUMAN_DIR" || exit 1
 wget --no-check-certificate -N "http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_44/MD5SUMS"
 
@@ -71,7 +73,7 @@ else
 fi
 [ ! -f "GRCh38.primary_assembly.annotation.gtf.gz" ] && ln -s "$FILE" "GRCh38.primary_assembly.annotation.gtf.gz"
 
-echo -e "\n[2/3] Processing Rat Reference (mRatBN7.2 - Ensembl v110)..."
+echo -e "\n[2/4] Processing Rat Reference (mRatBN7.2 - Ensembl v110)..."
 cd "$RAT_DIR" || exit 1
 
 FILE="Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz"
@@ -95,7 +97,7 @@ fi
 # ==============================================================================
 # SECTION 3: PATHWAYS
 # ==============================================================================
-echo -e "\n[3/3] Processing Pathway Databases..."
+echo -e "\n[3/4] Processing Pathway Databases..."
 
 # --- HUMAN ---
 cd "$PATHWAY_HUMAN" || exit 1
@@ -155,9 +157,9 @@ else echo "  [SKIP] Rat BrainGMT exists."; fi
 # Generate Rat sets via R (Robust to Version Differences)
 if [[ ! -s "$R_HALLMARK" || ! -s "$R_GOBP" || ! -s "$R_KEGG" ]]; then
     echo "  [GEN]  Generating Rat sets via R..."
-    
+
     export R_LIBS_USER="$RLIB_DIR"
-    
+
     cat <<INNER > generate_rat_sets.R
     lib_dir <- "$RLIB_DIR"
     if (!dir.exists(lib_dir)) dir.create(lib_dir, recursive = TRUE)
@@ -174,10 +176,8 @@ if [[ ! -s "$R_HALLMARK" || ! -s "$R_GOBP" || ! -s "$R_KEGG" ]]; then
     # 1. Load Data
     all_rat <- msigdbr(species = "Rattus norvegicus")
     cols <- colnames(all_rat)
-    
-    # 2. Dynamic Column Mapping (Fixes the version crash)
-    # We define 'cat_col' and 'sub_col' based on what actually exists.
-    
+
+    # 2. Dynamic Column Mapping
     if ("gs_collection" %in% cols) {
         cat_col <- "gs_collection"
         sub_col <- "gs_subcollection"
@@ -205,24 +205,16 @@ if [[ ! -s "$R_HALLMARK" || ! -s "$R_GOBP" || ! -s "$R_KEGG" ]]; then
         message(paste("Generated:", filename))
     }
 
-    # 4. Generate Sets using the dynamic column names
-    
-    # Hallmark (Category = H)
+    # 4. Generate Sets
     write_gmt(all_rat[all_rat[[cat_col]] == "H", ], "$R_HALLMARK")
-
-    # GO:BP (Category = C5, Subcat contains GO:BP)
-    # Use grepl to be safe against subcategory variations
     write_gmt(all_rat[all_rat[[cat_col]] == "C5" & grepl("GO:BP", all_rat[[sub_col]]), ], "$R_GOBP")
-
-    # KEGG (Category = C2, Name starts with KEGG_)
-    # We filter by name directly to avoid 'subcategory' content issues
     write_gmt(all_rat[all_rat[[cat_col]] == "C2" & grepl("^KEGG_", all_rat\$gs_name), ], "$R_KEGG")
 
 INNER
 
     Rscript generate_rat_sets.R || { echo "    [ERR] R script failed"; exit 1; }
     rm generate_rat_sets.R
-    
+
     check_valid_file "$R_HALLMARK" || exit 1
     check_valid_file "$R_GOBP" || exit 1
     check_valid_file "$R_KEGG" || exit 1
@@ -230,6 +222,33 @@ else
     echo "  [SKIP] Rat generated sets exist."
 fi
 
+# ==============================================================================
+# SECTION 4: STRING PPI NETWORK (v12.0)
+# ==============================================================================
+echo -e "\n[4/4] Processing STRING Database (v12.0 PPI Network)..."
+cd "$STRING_DIR" || exit 1
+
+# 1. Protein Links (The Network)
+FILE="9606.protein.links.v12.0.txt.gz"
+if [ -f "$FILE" ]; then
+    echo "  [SKIP] STRING Links exist."
+else
+    echo "  [DOWN] Downloading STRING Links (Network Topology)..."
+    wget --no-check-certificate -O "$FILE" "https://stringdb-static.org/download/protein.links.v12.0/9606.protein.links.v12.0.txt.gz"
+    check_valid_file "$FILE" || exit 1
+fi
+
+# 2. Protein Info (The ID Mapping)
+FILE="9606.protein.info.v12.0.txt.gz"
+if [ -f "$FILE" ]; then
+    echo "  [SKIP] STRING Info exists."
+else
+    echo "  [DOWN] Downloading STRING Info (ID Mapping)..."
+    wget --no-check-certificate -O "$FILE" "https://stringdb-static.org/download/protein.info.v12.0/9606.protein.info.v12.0.txt.gz"
+    check_valid_file "$FILE" || exit 1
+fi
+
 echo "========================================================"
 echo "Setup Complete!"
+echo "STRING DB located at: $STRING_DIR"
 echo "========================================================"
