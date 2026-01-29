@@ -3,8 +3,7 @@
 suppressPackageStartupMessages({
     library(data.table)
     library(dplyr)
-    library(tibble)
-    library(stringr) # Added for text cleaning
+    library(stringr)
 })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -14,19 +13,19 @@ u251_tpm_path    <- args[3]
 
 print("LOG: Starting CIBERSORTx Preparation...")
 
-# --- 1. LOAD METADATA & CALCULATE STATES ---
+# --- 1. LOAD METADATA ---
 if (!file.exists(neftel_meta_path)) stop("Metadata file not found!")
-
-# Read as character to safely handle the "TYPE" row
 neftel_meta <- fread(neftel_meta_path, colClasses = "character", fill=TRUE)
 
-# Remove the "TYPE" row if present
+# Clean up header/type rows
 if (neftel_meta[[1]][1] == "TYPE") {
-    print("Detected 'TYPE' row. Removing it.")
     neftel_meta <- neftel_meta[-1, ]
 }
-
 if (!"NAME" %in% colnames(neftel_meta)) colnames(neftel_meta)[1] <- "NAME"
+
+# *** CRITICAL FIX 1: SANITIZE SAMPLE IDS IN META ***
+# Replace hyphens with underscores
+neftel_meta$NAME <- str_replace_all(neftel_meta$NAME, "-", "_")
 
 print("LOG: Processing Cell States...")
 
@@ -36,10 +35,6 @@ if (nrow(tumor_cells) == 0) stop("CRITICAL: No cells found with CellAssignment =
 
 # Score Columns
 score_cols <- c("MESlike1", "MESlike2", "AClike", "OPClike", "NPClike1", "NPClike2")
-missing_cols <- setdiff(score_cols, colnames(tumor_cells))
-if (length(missing_cols) > 0) stop("Cannot calculate states; missing score columns.")
-
-# Convert to numeric
 tumor_scores <- tumor_cells %>%
   select(NAME, all_of(score_cols)) %>%
   mutate(across(all_of(score_cols), as.numeric))
@@ -51,31 +46,34 @@ assign_state <- function(r) {
     s_ac  <- unname(r["AClike"])
     s_opc <- unname(r["OPClike"])
     
-    # CRITICAL FIX: Use underscores, not hyphens
+    # *** CRITICAL FIX 2: SANITIZE CLASS NAMES ***
+    # Use underscores for classes (AC_like instead of AC-like)
     scores <- c("MES_like"=s_mes, "NPC_like"=s_npc, "AC_like"=s_ac, "OPC_like"=s_opc)
     return(names(which.max(scores)))
 }
 
-states <- apply(tumor_scores[, -1], 1, assign_state)
-tumor_cells$ComputedState <- states
+tumor_cells$ComputedState <- apply(tumor_scores[, -1], 1, assign_state)
+valid_cells <- tumor_cells$NAME # These are now underscored
 
-print("Cell State Distribution:")
-print(table(tumor_cells$ComputedState))
-
-valid_cells <- tumor_cells$NAME
-
-# --- 2. LOAD EXPRESSION ---
+# --- 2. LOAD EXPRESSION & SYNC ---
 print("LOG: Loading Expression Data...")
 if (grepl("\\.gz$", neftel_expr_path)) {
     neftel_expr <- fread(cmd = paste("gunzip -c", neftel_expr_path))
 } else {
     neftel_expr <- fread(neftel_expr_path)
 }
-colnames(neftel_expr)[1] <- "Gene" # Strict requirement for CIBERSORTx
+colnames(neftel_expr)[1] <- "Gene"
+
+# *** CRITICAL FIX 3: SANITIZE SAMPLE IDS IN EXPRESSION ***
+# Force column headers to match the underscored metadata
+clean_cols <- str_replace_all(colnames(neftel_expr), "-", "_")
+setnames(neftel_expr, colnames(neftel_expr), clean_cols)
 
 # Intersect cells
 common_cells <- intersect(valid_cells, colnames(neftel_expr))
-if (length(common_cells) == 0) stop("CRITICAL: No matching cells between metadata and expression.")
+print(paste("Matching cells found:", length(common_cells)))
+
+if (length(common_cells) == 0) stop("CRITICAL: No matching cells! Check ID formats.")
 
 # Subset Expression
 neftel_clean <- neftel_expr %>% select(Gene, all_of(common_cells))
@@ -95,31 +93,17 @@ phenotypes <- tumor_cells %>%
   
 fwrite(phenotypes, "phenotypes.txt", sep="\t", col.names=FALSE, quote=FALSE)
 
-print("LOG: Reference Prepared Successfully.")
-
+print("LOG: Reference & Phenotypes Prepared Successfully.")
 
 # --- 3. PREPARE MIXTURE ---
 print("LOG: Loading U251 Data...")
 u251 <- fread(u251_tpm_path)
-
-# Smart Column Detection
 cols <- colnames(u251)
-if ("gene_name" %in% cols) {
-    gene_col <- "gene_name"
-} else if ("symbol" %in% cols) {
-    gene_col <- "symbol"
-} else if ("gene_id" %in% cols) {
-    gene_col <- "gene_id"
-} else {
-    gene_col <- cols[1]
-}
+if ("gene_name" %in% cols) gene_col <- "gene_name" else gene_col <- cols[1]
 
-print(paste("Using gene column:", gene_col))
-
-# Robust Selection
 u251_final <- u251 %>%
   select(all_of(gene_col), where(is.numeric)) %>%
-  rename(Gene = all_of(gene_col)) %>% # Rename to Gene to match Ref
+  rename(Gene = all_of(gene_col)) %>%
   group_by(Gene) %>%
   summarise(across(everything(), sum))
 
