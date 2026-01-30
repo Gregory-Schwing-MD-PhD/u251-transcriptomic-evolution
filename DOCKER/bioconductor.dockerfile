@@ -125,5 +125,10 @@ RUN R -e "install.packages('base64enc', repos='http://cran.rstudio.com/')"
 # ------------------------------------------------------------------------------
 RUN R -e "install.packages('dunn.test', repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# LAYER 15: Visualization Utilities (v14 Requirement)
+# ------------------------------------------------------------------------------
+RUN R -e "install.packages('patchwork', repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
 
