@@ -101,4 +101,12 @@ RUN R -e "BiocManager::install('DOSE')"
 # ------------------------------------------------------------------------------
 RUN R -e "install.packages('openxlsx', repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# LAYER 11: Statistical Reporting (Global Subtypes)
+# ------------------------------------------------------------------------------
+RUN R -e "install.packages(c( \
+    'vegan', \
+    'knitr' \
+    ), repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
