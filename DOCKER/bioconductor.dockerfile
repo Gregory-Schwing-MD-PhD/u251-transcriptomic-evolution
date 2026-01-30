@@ -120,5 +120,10 @@ RUN R -e "BiocManager::install('limma')"
 # ------------------------------------------------------------------------------
 RUN R -e "install.packages('base64enc', repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# LAYER 14: Statistical Post-Hoc Tests (v12 requirement)
+# ------------------------------------------------------------------------------
+RUN R -e "install.packages('dunn.test', repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
 
