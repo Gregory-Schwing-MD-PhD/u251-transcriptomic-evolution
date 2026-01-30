@@ -3,11 +3,6 @@
 # ------------------------------------------------------------------------------
 # GLOBAL SUBTYPES ANALYSIS v13.0 (Robust Small-N Edition)
 # ------------------------------------------------------------------------------
-# Improvements over v12:
-# 1. Robust Scoring: Z-Score + GSVA with agreement metrics
-# 2. Outlier Handling: limma::arrayWeights to down-weight noisy replicates
-# 3. Co-evolution: Signature Correlation Matrix
-# ------------------------------------------------------------------------------
 
 set.seed(12345)
 
@@ -26,9 +21,7 @@ TEXT_BASE_SIZE <- 14
 MIN_SAMPLES_PER_GROUP <- 3
 FDR_THRESHOLDS <- c(0.05, 0.01, 0.005, 0.001)
 FDR_LABELS <- c("Standard (0.05)", "Strict (0.01)", "Very Strict (0.005)", "Ultra (0.001)")
-
-# SCORING METHOD: "zscore", "gsva", or "both"
-SCORING_METHOD <- "both"  # Runs both and shows agreement
+SCORING_METHOD <- "both"
 
 # ==============================================================================
 # UTILITY FUNCTIONS
@@ -40,13 +33,15 @@ map_genes_to_symbols <- function(gene_ids, db = EnsDb.Hsapiens.v86) {
 }
 
 safe_format <- function(x) {
-    if (is.null(x) || length(x) == 0 || is.na(x)) return("NA")
+    if (is.null(x) || length(x) == 0) return("NA")
+    if (length(x) > 1) return(paste(x, collapse=", "))  # Handle vectors
+    if (is.na(x)) return("NA")
     if (!is.numeric(x)) return(as.character(x))
     return(formatC(x, format="e", digits=2))
 }
 
 interpret_p <- function(p) {
-    if (is.na(p)) return("NA")
+    if (is.null(p) || length(p) == 0 || is.na(p)) return("NA")
     if (p < 0.001) return("***")
     if (p < 0.01) return("**")
     if (p < 0.05) return("*")
@@ -219,7 +214,7 @@ gsva_res <- suppressWarnings(
     gsva(mat_sym, sigs, method="gsva", kcdf="Gaussian", verbose=FALSE)
 )
 
-# Method 2: Z-Score Averaging (more robust for small gene sets)
+# Method 2: Z-Score Averaging
 mat_z <- t(scale(t(mat_sym)))
 z_res <- matrix(NA, nrow=length(sigs), ncol=ncol(mat_z), 
                 dimnames=list(names(sigs), colnames(mat_z)))
@@ -254,7 +249,6 @@ if(SCORING_METHOD == "both") {
     ggsave(paste0(output_prefix, "_Method_Agreement_mqc.png"), p_agreement, 
            width=8, height=6)
     
-    # Use Z-scores for stats (more robust)
     final_scores <- z_res
     scoring_label <- "Z-Score (Robust for small gene sets)"
 } else if(SCORING_METHOD == "zscore") {
@@ -279,7 +273,6 @@ calc_entropy <- function(s) {
 
 meta$Plasticity <- apply(final_scores, 2, calc_entropy)
 
-# Test Plasticity
 shapiro_p <- shapiro.test(meta$Plasticity)$p.value
 
 if(shapiro_p < 0.05) {
@@ -308,7 +301,6 @@ ggsave(paste0(output_prefix, "_Plasticity_Entropy_mqc.png"), p_plast, width=6, h
 # ==============================================================================
 cat("LOG [5/12]: Heatmaps & Co-evolution...\n")
 
-# A. Score Heatmap
 col_ann <- HeatmapAnnotation(
     Class = meta$Classification,
     col = list(Class = c(
@@ -332,14 +324,13 @@ png(paste0(output_prefix, "_Score_Heatmap_mqc.png"),
 draw(ht)
 dev.off()
 
-# B. Signature Co-evolution (Correlation Matrix)
 sig_cor <- cor(t(final_scores), method="pearson")
 
 ht_cor <- Heatmap(
     sig_cor, 
     name = "Pearson\nCorr", 
     col = colorRamp2(c(-1, 0, 1), c("blue", "white", "red")),
-    column_title = "Signature Co-evolution Across Samples"
+    column_title = "Signature Co-evolution"
 )
 
 png(paste0(output_prefix, "_Sig_Correlation_mqc.png"), 
@@ -355,12 +346,14 @@ cat("LOG [6/12]: Robust Stats with arrayWeights...\n")
 design <- model.matrix(~0 + meta$Classification)
 colnames(design) <- levels(meta$Classification)
 
-# Calculate sample weights (down-weight outliers)
 aw <- arrayWeights(final_scores, design)
 
 cat("\n📊 Sample Reliability Weights (lower = noisier):\n")
-weight_df <- data.frame(Sample=names(aw), Weight=round(aw, 3), 
-                       Group=meta[names(aw), "Classification"])
+weight_df <- data.frame(
+    Sample = names(aw), 
+    Weight = round(aw, 3), 
+    Group = as.character(meta[names(aw), "Classification"])
+)
 print(weight_df[order(weight_df$Weight), ])
 
 cont.matrix <- makeContrasts(
@@ -370,7 +363,6 @@ cont.matrix <- makeContrasts(
     levels = design
 )
 
-# Fit WITH weights (critical for small n)
 fit <- lmFit(final_scores, design, weights=aw) 
 fit <- contrasts.fit(fit, cont.matrix)
 fit <- eBayes(fit)
@@ -395,12 +387,13 @@ for(i in 1:length(FDR_THRESHOLDS)) {
         tt <- topTable(fit, coef=coef, number=Inf, adjust.method="BH")
         
         stats_out[[paste0(coef, "_logFC")]] <- round(tt[stats_out$Signature, "logFC"], 3)
-        stats_out[[paste0(coef, "_adjP")]] <- safe_format(tt[stats_out$Signature, "adj.P.Val"])
+        stats_out[[paste0(coef, "_adjP")]] <- sapply(stats_out$Signature, function(sig) {
+            safe_format(tt[sig, "adj.P.Val"])
+        })
         stats_out[[paste0(coef, "_Sig")]] <- ifelse(tt[stats_out$Signature, "adj.P.Val"] < thresh, "Yes", "No")
         
         sig_counts[i, coef] <- sum(tt[, "adj.P.Val"] < thresh, na.rm=TRUE)
         
-        # Volcano plot
         volc_data <- data.frame(
             Signature = rownames(tt), 
             logFC = tt$logFC, 
@@ -424,7 +417,6 @@ for(i in 1:length(FDR_THRESHOLDS)) {
                p_vol, width=7, height=6)
     }
     
-    # Save table
     tf <- paste0(dirname(output_prefix), "/fdr_", 
                 gsub("[^0-9]", "", as.character(thresh)), "_stats_mqc.tsv")
     cat(paste0("# id: 'stats_", gsub("[^0-9]", "", as.character(thresh)), 
@@ -475,16 +467,15 @@ p_sensitivity <- ggplot(sig_counts_long, aes(x=Label, y=N_Significant, fill=Cont
     geom_bar(stat="identity", position="dodge", alpha=0.8) +
     geom_text(aes(label=N_Significant), position=position_dodge(0.9), vjust=-0.5, size=3) +
     scale_fill_manual(values=c("#1f77b4", "#ff7f0e", "#d62728")) +
-    labs(title="FDR Sensitivity: Significant Signatures by Threshold",
+    labs(title="FDR Sensitivity",
          subtitle=paste0(nrow(final_scores), " signatures tested"),
-         x="FDR Threshold", y="N Significant", fill="Contrast") +
+         x="FDR Threshold", y="N Significant") +
     theme_bw(base_size=12) +
     theme(axis.text.x = element_text(angle=45, hjust=1), legend.position = "bottom") +
     ylim(0, nrow(final_scores) + 0.5)
 
 ggsave(paste0(output_prefix, "_FDR_Sensitivity_mqc.png"), p_sensitivity, width=10, height=7)
 
-# Save summary table
 summary_file <- paste0(dirname(output_prefix), "/fdr_sensitivity_summary_mqc.tsv")
 cat("# id: 'fdr_sensitivity'\n# section_name: 'FDR Sensitivity'\n# plot_type: 'table'\n", 
     file=summary_file)
@@ -507,12 +498,15 @@ cat("LOG [11/12]: Generating HTML Summary...\n")
 summary_html <- paste0(dirname(output_prefix), "/analysis_summary_mqc.html")
 sink(summary_html)
 
+# Create simple text summaries
+group_summary <- paste(names(group_sizes), as.vector(group_sizes), sep=": ", collapse="\n")
+
 cat("
 <div style='background-color:#f8f9fa; padding:15px; border:1px solid #ddd; margin-bottom:20px;'>
-    <h3>🔬 Analysis Summary (v13 - Robust Small-N Edition)</h3>
+    <h3>🔬 Analysis Summary (Robust Small-N Edition)</h3>
     
     <h4>Metadata</h4>
-    <pre>", paste(names(group_sizes), group_sizes, sep=": ", collapse="\n"), "</pre>
+    <pre>", group_summary, "</pre>
     
     <h4>Scoring Method</h4>
     <p><strong>", scoring_label, "</strong></p>
@@ -539,16 +533,14 @@ for(j in order(weight_df$Weight)) {
 }
 
 cat("    </table>
-    <p style='font-size:11px; color:#666;'><em>Lower weights indicate noisy/outlier samples that were down-weighted in statistics.</em></p>
     
     <h4>PCA Drivers</h4>
     <pre style='font-size:10px;'>", pc_drivers, "</pre>
     
     <h4>FDR Sensitivity Results</h4>
-")
-
-cat("    <table style='border-collapse: collapse; width:100%;'>
+    <table style='border-collapse: collapse; width:100%;'>
         <tr style='background:#ddd;'><th style='padding:5px; border:1px solid #999;'>Threshold</th>")
+
 for(coef in all_coefs) {
     cat(sprintf("<th style='padding:5px; border:1px solid #999;'>%s</th>", gsub("_", " ", coef)))
 }
@@ -571,7 +563,7 @@ cat("    </table>
     <h4>Methods</h4>
     <ul>
         <li><strong>Scoring:</strong> ", scoring_label, "</li>
-        <li><strong>Statistical Model:</strong> limma with arrayWeights (outlier down-weighting)</li>
+        <li><strong>Statistical Model:</strong> limma with arrayWeights</li>
         <li><strong>FDR Correction:</strong> Benjamini-Hochberg</li>
         <li><strong>Software:</strong> R ", as.character(R.version.string), 
         ", limma ", as.character(packageVersion("limma")), "</li>
@@ -587,10 +579,9 @@ sink()
 cat("LOG [12/12]: Saving Session Info...\n")
 writeLines(capture.output(sessionInfo()), paste0(dirname(output_prefix), "/sessionInfo.txt"))
 
-cat("\n=== V13 PIPELINE COMPLETE ===\n")
-cat("✓ Dual scoring methods with agreement metrics\n")
+cat("\n=== PIPELINE COMPLETE ===\n")
+cat("✓ Dual scoring with agreement metrics\n")
 cat("✓ Sample quality weights calculated\n")
 cat("✓ Signature co-evolution matrix\n")
-cat("✓ Multi-FDR sensitivity analysis\n")
 cat("\nFDR Summary:\n")
 print(sig_counts)
