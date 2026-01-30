@@ -1,10 +1,12 @@
 #!/usr/bin/env Rscript
 
 # ------------------------------------------------------------------------------
-# GLOBAL SUBTYPES & EVOLUTIONARY ANALYSIS v7.0 (Self-Contained)
+# GLOBAL SUBTYPES ANALYSIS v13.0 (Robust Small-N Edition)
 # ------------------------------------------------------------------------------
-# - Focus: Trajectory, Plasticity, High-Sensitivity Stats
-# - Fixes: Base64 Image Embedding, Raw Data Tables, Tree Generation
+# Improvements over v12:
+# 1. Robust Scoring: Z-Score + GSVA with agreement metrics
+# 2. Outlier Handling: limma::arrayWeights to down-weight noisy replicates
+# 3. Co-evolution: Signature Correlation Matrix
 # ------------------------------------------------------------------------------
 
 set.seed(12345)
@@ -13,144 +15,43 @@ suppressPackageStartupMessages({
     library(ggplot2); library(dplyr); library(ape); library(ggrepel)
     library(EnsDb.Hsapiens.v86); library(ComplexHeatmap); library(circlize)
     library(GSVA); library(tidyr); library(tibble)
-    library(limma)
-    library(vegan)
-    library(car)
-    library(base64enc) # Critical for self-contained reports
+    library(limma); library(vegan); library(car)
 })
 
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
 N_TOP_VARIABLE_GENES <- 500
-PCA_POINT_SIZE <- 6
 TEXT_BASE_SIZE <- 14
+MIN_SAMPLES_PER_GROUP <- 3
+FDR_THRESHOLDS <- c(0.05, 0.01, 0.005, 0.001)
+FDR_LABELS <- c("Standard (0.05)", "Strict (0.01)", "Very Strict (0.005)", "Ultra (0.001)")
+
+# SCORING METHOD: "zscore", "gsva", or "both"
+SCORING_METHOD <- "both"  # Runs both and shows agreement
 
 # ==============================================================================
-# REPORTING ENGINE (Base64 Embedded)
-# ==============================================================================
-html_buffer <- character()
-
-init_html <- function() {
-    style <- "
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; background: #fff; padding: 40px; max-width: 1200px; margin: 0 auto; }
-        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 15px; }
-        h2 { color: #2980b9; margin-top: 50px; border-left: 6px solid #2980b9; padding-left: 15px; background: #f4f6f7; padding: 10px; }
-        h3 { color: #16a085; margin-top: 30px; border-bottom: 1px solid #eee; padding-bottom: 5px;}
-        p { line-height: 1.6; color: #555; margin-bottom: 15px; }
-        
-        /* Tables */
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; border: 1px solid #ddd; }
-        th { background: #34495e; color: #fff; padding: 12px; text-align: left; }
-        td { padding: 8px; border-bottom: 1px solid #eee; }
-        tr:nth-child(even) { background: #f9f9f9; }
-        .sig { color: #c0392b; font-weight: bold; background-color: #fdebd0; }
-        
-        /* Images */
-        .img-box { text-align: center; margin: 40px 0; border: 1px solid #ddd; padding: 20px; background: #fafafa; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .img-box img { max-width: 95%; height: auto; }
-        .caption { margin-top: 15px; font-style: italic; color: #7f8c8d; font-size: 1em; font-weight: 500; }
-        
-        /* Misc */
-        .citation-box { background: #eaf2f8; padding: 20px; margin-top: 60px; border-top: 4px solid #3498db; font-size: 13px; color: #444; border-radius: 5px; }
-        .stat-explainer { background: #fff8e1; border-left: 4px solid #f1c40f; padding: 15px; font-size: 0.95em; margin-bottom: 20px; color: #7f6000; }
-        .llm-box { background: #2c3e50; color: #ecf0f1; border-radius: 5px; padding: 20px; margin-top: 40px; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
-        .scroll-table { overflow-x: auto; display: block; max-height: 500px; }
-    </style>
-    <h1>Global Evolutionary Transcriptomic Report</h1>
-    <p><strong>Generated:</strong> "
-    html_buffer <<- c(html_buffer, paste0(style, Sys.Date(), "</p>"))
-}
-
-add_header <- function(txt) { html_buffer <<- c(html_buffer, paste0("<h2>", txt, "</h2>")) }
-
-add_explainer <- function(title, text) {
-    html_buffer <<- c(html_buffer, paste0("<div class='stat-explainer'><strong>", title, ":</strong> ", text, "</div>"))
-}
-
-add_table <- function(df, title, scroll=FALSE) {
-    if(nrow(df) == 0) {
-        html_buffer <<- c(html_buffer, paste0("<h3>", title, "</h3><p>No results found.</p>"))
-        return()
-    }
-    
-    # Format numeric columns
-    df_fmt <- df
-    for(i in 1:ncol(df)) {
-        if(is.numeric(df[,i])) df_fmt[,i] <- formatC(df[,i], format="f", digits=3)
-    }
-    
-    header <- paste0("<tr>", paste0("<th>", colnames(df), "</th>", collapse=""), "</tr>")
-    rows <- apply(df_fmt, 1, function(r) {
-        cells <- sapply(r, function(x) {
-            val <- as.character(x)
-            # Heuristic for highlighting
-            if(grepl("e-", val) || (suppressWarnings(!is.na(as.numeric(val))) && as.numeric(val) < 0.05 && as.numeric(val) > 0)) {
-                return(paste0("<td class='sig'>", val, "</td>"))
-            }
-            return(paste0("<td>", val, "</td>"))
-        })
-        paste0("<tr>", paste(cells, collapse=""), "</tr>")
-    })
-    
-    tbl_class <- if(scroll) "scroll-table" else ""
-    html_buffer <<- c(html_buffer, paste0("<h3>", title, "</h3><div class='", tbl_class, "'><table>", header, paste(rows, collapse=""), "</table></div>"))
-}
-
-add_image_base64 <- function(file_path, caption) {
-    if(!file.exists(file_path)) {
-        html_buffer <<- c(html_buffer, paste0("<p style='color:red'>Error: Image not found - ", basename(file_path), "</p>"))
-        return()
-    }
-    # Encode image to Base64
-    b64 <- base64enc::dataURI(file = file_path, mime = "image/png")
-    html_buffer <<- c(html_buffer, paste0(
-        "<div class='img-box'>",
-        "<img src='", b64, "' alt='", caption, "'>",
-        "<div class='caption'>", caption, "</div></div>"
-    ))
-}
-
-add_llm_summary <- function(txt) {
-    html_buffer <<- c(html_buffer, paste0("<h3>AI Summary Context</h3><div class='llm-box'><strong>Prompt Context:</strong><br>", txt, "</div>"))
-}
-
-add_citations <- function() {
-    cites <- "
-    <div class='citation-box'>
-        <h3>References & Methodology</h3>
-        <ul>
-            <li><strong>Verhaak et al. (2010):</strong> <em>Cancer Cell.</em> (Classical, Mesenchymal, Proneural).</li>
-            <li><strong>Neftel et al. (2019):</strong> <em>Cell.</em> (AC-like, MES-like, OPC-like, NPC-like).</li>
-            <li><strong>Garofano et al. (2021):</strong> <em>Nature Cancer.</em> (Mitochondrial, Glycolytic).</li>
-            <li><strong>Limma:</strong> Linear Models for Microarray Data (Smyth 2004). Empirical Bayes moderation.</li>
-            <li><strong>ANOVA & Bartlett:</strong> Parametric tests for mean and variance differences.</li>
-        </ul>
-    </div>"
-    html_buffer <<- c(html_buffer, cites)
-}
-
-finish_html <- function(prefix) {
-    out_file <- paste0(dirname(prefix), "/U251_Global_Subtypes_Report_Standalone.html")
-    writeLines(html_buffer, out_file)
-    cat(paste0("SUCCESS: Self-contained report written to ", out_file, "\n"))
-}
-
-# ==============================================================================
-# UTILITY
+# UTILITY FUNCTIONS
 # ==============================================================================
 map_genes_to_symbols <- function(gene_ids, db = EnsDb.Hsapiens.v86) {
     clean_ids <- sub("\\..*", "", gene_ids)
     symbols <- mapIds(db, keys=clean_ids, column="SYMBOL", keytype="GENEID", multiVals="first")
-    ifelse(is.na(symbols), gene_ids, symbols)
+    ifelse(is.na(symbols), clean_ids, symbols)
 }
 
 safe_format <- function(x) {
-    if (is.null(x) || length(x) == 0) return("NA")
-    if (is.na(x)) return("NA")
+    if (is.null(x) || length(x) == 0 || is.na(x)) return("NA")
     if (!is.numeric(x)) return(as.character(x))
     return(formatC(x, format="e", digits=2))
+}
+
+interpret_p <- function(p) {
+    if (is.na(p)) return("NA")
+    if (p < 0.001) return("***")
+    if (p < 0.01) return("**")
+    if (p < 0.05) return("*")
+    if (p < 0.10) return(".")
+    return("ns")
 }
 
 # ==============================================================================
@@ -164,213 +65,532 @@ output_prefix <- args[2]
 meta_file     <- args[3]
 
 dir.create(dirname(output_prefix), showWarnings = FALSE, recursive = TRUE)
-init_html()
 
-cat("LOG [1/8]: Loading Data...\n")
+cat("LOG [1/12]: Loading Data...\n")
 vst_file <- file.path(results_dir, "tables/processed_abundance/all.vst.tsv")
 mat_vst <- as.matrix(read.table(vst_file, header=TRUE, row.names=1, check.names=FALSE))
 meta <- read.csv(meta_file, row.names=1)
 common <- intersect(colnames(mat_vst), rownames(meta))
-mat_vst <- mat_vst[, common]; meta <- meta[common, , drop=FALSE]
+mat_vst <- mat_vst[, common]
+meta <- meta[common, , drop=FALSE]
 
 if("Classification" %in% colnames(meta)) {
-    meta$Classification <- factor(meta$Classification, levels=c("Culture_U2", "Primary_U2", "Recurrent_U2"))
+    meta$Classification <- factor(meta$Classification, 
+                                  levels=c("Culture_U2", "Primary_U2", "Recurrent_U2"))
 }
 
+group_sizes <- table(meta$Classification)
+cat("Sample sizes per group:\n")
+print(group_sizes)
+
+# Map symbols
 mapped_syms <- map_genes_to_symbols(rownames(mat_vst))
-mat_sym <- as.data.frame(mat_vst) %>% tibble::rownames_to_column("symbol") %>%
-    mutate(symbol = mapped_syms) %>% dplyr::filter(!is.na(symbol)) %>% group_by(symbol) %>%
-    summarise(across(everything(), mean)) %>% tibble::column_to_rownames("symbol") %>% as.matrix()
+mat_sym_df <- as.data.frame(mat_vst) %>% 
+    tibble::rownames_to_column("ensembl") %>%
+    mutate(symbol = mapped_syms) %>% 
+    dplyr::filter(!is.na(symbol))
+
+mat_sym <- mat_sym_df %>%
+    group_by(symbol) %>%
+    summarise(across(where(is.numeric), mean)) %>% 
+    tibble::column_to_rownames("symbol") %>% 
+    as.matrix()
 
 # ==============================================================================
-# 2. GLOBAL STRUCTURE (TREE & PCA)
+# 2. GLOBAL STRUCTURE
 # ==============================================================================
-add_header("1. Global Evolutionary Trajectory")
-add_explainer("Phylogenetic Tree", "Visualizes the distance between samples based on whole-transcriptome expression. Branches closer together are more similar.")
-
-cat("LOG [2/8]: Calculating PCA & Tree...\n")
-
+cat("LOG [2/12]: Global Structure...\n")
 top_var <- head(order(apply(mat_vst, 1, var), decreasing=TRUE), N_TOP_VARIABLE_GENES)
 mat_sig <- mat_vst[top_var, ]
 
-# --- PHYLOGENETIC TREE (Explicit Base Save) ---
-phylo_tree <- as.phylo(hclust(dist(t(mat_sig)), method="ward.D2"))
-if("C2B" %in% phylo_tree$tip.label) phylo_tree <- root(phylo_tree, outgroup="C2B", resolve.root=TRUE)
-grp_cols <- c("Culture_U2"="#1f77b4", "Primary_U2"="#ff7f0e", "Recurrent_U2"="#d62728")
-tip_cols <- if("Classification" %in% colnames(meta)) grp_cols[as.character(meta[phylo_tree$tip.label, "Classification"])] else "black"
-tip_cols[is.na(tip_cols)] <- "black"
+# PCA & PERMANOVA
+perm_res <- tryCatch({
+    adonis2(dist(t(mat_sig)) ~ Classification, data = meta, permutations = 999)
+}, error=function(e) NULL)
 
-tree_png <- paste0(output_prefix, "_Phylogenetic_Tree_mqc.png")
-png(tree_png, width=10, height=8, units="in", res=300)
-plot(phylo_tree, type="phylogram", tip.color=tip_cols, main="Phylogenetic Tree", cex=1.2, edge.width=2)
-legend("topright", legend=names(grp_cols), fill=grp_cols, bty="n")
-dev.off()
-add_image_base64(tree_png, "Figure 1: Phylogenetic Tree (Ward's D2 Clustering)")
+perm_p <- if(!is.null(perm_res)) perm_res$`Pr(>F)`[1] else NA
+perm_r2 <- if(!is.null(perm_res)) perm_res$R2[1] else NA
 
-# --- PCA ---
 pca <- prcomp(t(mat_sig))
-var_pc <- round(summary(pca)$importance[2, 1:2]*100, 1)
-pcaData <- data.frame(PC1=pca$x[,1], PC2=pca$x[,2], Sample=rownames(meta), Class=meta$Classification)
+pcaData <- data.frame(
+    PC1 = pca$x[,1], 
+    PC2 = pca$x[,2], 
+    Sample = rownames(meta), 
+    Class = meta$Classification
+)
 
+n_pcs <- min(10, ncol(pca$x))
+var_pc <- round(summary(pca)$importance[2, 1:n_pcs]*100, 1)
+
+# Scree Plot
+scree_data <- data.frame(
+    PC = factor(paste0("PC", 1:n_pcs), levels=paste0("PC", 1:n_pcs)), 
+    Variance = var_pc
+)
+
+p_scree <- ggplot(scree_data, aes(x=PC, y=Variance)) +
+    geom_bar(stat="identity", fill="steelblue") + 
+    geom_line(aes(group=1), color="darkblue", linewidth=1) +
+    geom_point(color="darkblue", size=3) +
+    labs(title="PCA Scree Plot", y="% Variance Explained") + 
+    theme_bw(base_size=TEXT_BASE_SIZE)
+
+ggsave(paste0(output_prefix, "_Scree_Plot_mqc.png"), p_scree, width=8, height=5)
+
+# PCA Loadings
+loadings <- pca$rotation
+rownames(loadings) <- map_genes_to_symbols(rownames(loadings))
+
+pc_drivers <- ""
+for(i in 1:min(5, ncol(loadings))) {
+    pc <- paste0("PC", i)
+    top <- names(sort(abs(loadings[, pc]), decreasing=TRUE)[1:8])
+    pc_drivers <- paste0(pc_drivers, "\n", pc, ": ", paste(top, collapse=", "))
+}
+
+# Trajectory Plot
 centroids <- aggregate(cbind(PC1, PC2) ~ Class, data=pcaData, FUN=mean)
 centroids <- centroids[match(levels(meta$Classification), centroids$Class), ]
-centroids <- na.omit(centroids) 
+centroids <- na.omit(centroids)
 
-arrow_data <- data.frame(
-    x_start = centroids$PC1[-nrow(centroids)],
-    y_start = centroids$PC2[-nrow(centroids)],
-    x_end = centroids$PC1[-1],
-    y_end = centroids$PC2[-1]
-)
-
-perm_res <- tryCatch({ adonis2(dist(t(mat_sig)) ~ Classification, data = meta, permutations = 999) }, error=function(e) NULL)
-sub_txt <- if(!is.null(perm_res)) paste0("PERMANOVA: p=", perm_res$`Pr(>F)`[1], ", R2=", round(perm_res$R2[1]*100,1), "%") else ""
+arrow_data <- if(nrow(centroids) >= 2) {
+    data.frame(
+        x_start = centroids$PC1[-nrow(centroids)], 
+        y_start = centroids$PC2[-nrow(centroids)], 
+        x_end = centroids$PC1[-1], 
+        y_end = centroids$PC2[-1]
+    )
+} else {
+    data.frame()
+}
 
 p_pca <- ggplot(pcaData, aes(x=PC1, y=PC2)) +
-    geom_segment(data=arrow_data, aes(x=x_start, y=y_start, xend=x_end, yend=y_end),
-                 arrow=arrow(length=unit(0.4,"cm"), type="closed"), color="grey50", linewidth=1.5, inherit.aes=FALSE) +
-    geom_point(aes(fill=Class, shape=Class), size=7, color="black", stroke=0.8) +
-    ggrepel::geom_text_repel(aes(label=Sample), size=4, box.padding=0.5, point.padding=0.3) +
-    geom_label(data=centroids, aes(x=PC1, y=PC2, label=Class), fill="white", alpha=0.8, fontface="bold") +
-    scale_fill_manual(values=grp_cols) +
+    {if(nrow(arrow_data) > 0) 
+        geom_segment(data=arrow_data, 
+                    aes(x=x_start, y=y_start, xend=x_end, yend=y_end), 
+                    arrow=arrow(length=unit(0.4,"cm"), type="closed"), 
+                    color="grey50", linewidth=1.2, inherit.aes=FALSE)
+    } +
+    geom_point(aes(fill=Class, shape=Class), size=6, color="black", stroke=0.8) +
+    ggrepel::geom_text_repel(aes(label=Sample), size=4, box.padding=0.5) +
+    scale_fill_manual(values=c("#1f77b4", "#ff7f0e", "#d62728")) + 
     scale_shape_manual(values=c(21, 24, 22)) +
-    labs(title="Evolutionary Trajectory (PCA)", subtitle=sub_txt, 
-         x=paste0("PC1 (", var_pc[1], "%)"), y=paste0("PC2 (", var_pc[2], "%)")) +
-    theme_bw(base_size=TEXT_BASE_SIZE) + theme(legend.position="bottom")
+    labs(title="Evolutionary Trajectory", 
+         subtitle=paste0("PERMANOVA: R²=", round(perm_r2, 3), ", P=", safe_format(perm_p)), 
+         x=paste0("PC1 (", var_pc[1], "%)"), 
+         y=paste0("PC2 (", var_pc[2], "%)")) + 
+    theme_bw(base_size=TEXT_BASE_SIZE)
 
-pca_png <- paste0(output_prefix, "_PCA_Trajectory_mqc.png")
-ggsave(pca_png, p_pca, width=10, height=9, dpi=300)
-add_image_base64(pca_png, "Figure 2: Evolutionary Trajectory. The arrows indicate the net movement of the transcriptome centroid from Culture -> Primary -> Recurrent.")
+ggsave(paste0(output_prefix, "_PCA_Trajectory_mqc.png"), p_pca, width=9, height=8)
+
+# Tree
+phylo_tree <- as.phylo(hclust(dist(t(mat_sig)), method="ward.D2"))
+if("C2B" %in% phylo_tree$tip.label) {
+    phylo_tree <- root(phylo_tree, outgroup="C2B", resolve.root=TRUE)
+}
+tip_cols <- c("#1f77b4", "#ff7f0e", "#d62728")[
+    as.numeric(meta[phylo_tree$tip.label, "Classification"])
+]
+
+png(paste0(output_prefix, "_Phylogenetic_Tree_mqc.png"), 
+    width=10, height=8, units="in", res=300)
+plot(phylo_tree, type="phylogram", tip.color=tip_cols, 
+     main="Phylogenetic Tree (Ward's D2)", cex=1.2, edge.width=2)
+legend("topleft", legend=levels(meta$Classification), 
+       fill=c("#1f77b4", "#ff7f0e", "#d62728"), bty="n")
+dev.off()
 
 # ==============================================================================
-# 3. SUBTYPE SCORING & RAW TABLE
+# 3. SUBTYPE SCORING (HYBRID: GSVA + Z-SCORE)
 # ==============================================================================
-add_header("2. Subtype Scoring")
-cat("LOG [3/8]: Scoring Subtypes...\n")
+cat("LOG [3/12]: Dual Scoring Methods (GSVA + Z-Score)...\n")
+
 sigs <- list(
-    "Verhaak_MES"=c("CHI3L1","CD44","VIM","RELB","STAT3"),
-    "Verhaak_CL"=c("EGFR","AKT2","NOTCH3","CCND2"),
-    "Verhaak_PN"=c("PDGFRA","IDH1","OLIG2","SOX2","TP53"),
-    "Neftel_MES"=c("CHI3L1","CD44","ANXA1","VIM"),
-    "Neftel_AC"=c("APOE","AQP4","CLU","S100B"),
-    "Neftel_OPC"=c("OLIG1","OLIG2","PDGFRA","SOX10"),
-    "Neftel_NPC"=c("DLL3","SOX4","TUBB3","DCX"),
-    "Garofano_MTC"=c("SLC45A1","GOT2","IDH2","SDHA","CS"),
-    "Garofano_GPM"=c("SLC2A1","HK2","PFKP","LDHA","GAPDH")
+    "Verhaak_MES" = c("CHI3L1","CD44","VIM","RELB","STAT3"), 
+    "Verhaak_CL" = c("EGFR","AKT2","NOTCH3","CCND2"),
+    "Neftel_AC" = c("APOE","AQP4","CLU","S100B"), 
+    "Neftel_MES" = c("CHI3L1","CD44","ANXA1","VIM"),
+    "Garofano_MTC" = c("SLC45A1","GOT2","IDH2","SDHA","CS"), 
+    "Garofano_GPM" = c("SLC2A1","HK2","PFKP","LDHA","GAPDH")
 )
-gsva_res <- suppressWarnings(gsva(mat_sym, sigs, method="gsva", kcdf="Gaussian", verbose=FALSE))
-gsva_scaled <- t(scale(t(gsva_res)))
 
-# ADD RAW DATA TABLE
-raw_df <- as.data.frame(t(gsva_res))
-raw_df <- tibble::rownames_to_column(raw_df, "Sample")
-add_table(raw_df, "Raw Subtype Scores (GSVA)", scroll=TRUE)
+# Method 1: GSVA
+gsva_res <- suppressWarnings(
+    gsva(mat_sym, sigs, method="gsva", kcdf="Gaussian", verbose=FALSE)
+)
+
+# Method 2: Z-Score Averaging (more robust for small gene sets)
+mat_z <- t(scale(t(mat_sym)))
+z_res <- matrix(NA, nrow=length(sigs), ncol=ncol(mat_z), 
+                dimnames=list(names(sigs), colnames(mat_z)))
+
+for(s in names(sigs)) {
+    genes <- intersect(sigs[[s]], rownames(mat_z))
+    if(length(genes) > 1) {
+        z_res[s,] <- colMeans(mat_z[genes, , drop=FALSE])
+    } else if(length(genes) == 1) {
+        z_res[s,] <- mat_z[genes, ]
+    }
+}
+
+# Method agreement
+if(SCORING_METHOD == "both") {
+    cor_methods <- cor(as.vector(gsva_res), as.vector(z_res), use="complete.obs")
+    cat(sprintf("\n✓ GSVA vs Z-score correlation: r = %.3f\n", cor_methods))
+    
+    agreement_df <- data.frame(
+        GSVA = as.vector(gsva_res),
+        Zscore = as.vector(z_res),
+        Signature = rep(rownames(gsva_res), each=ncol(gsva_res))
+    )
+    
+    p_agreement <- ggplot(agreement_df, aes(x=GSVA, y=Zscore, color=Signature)) +
+        geom_point(alpha=0.7, size=3) +
+        geom_abline(slope=1, intercept=0, linetype="dashed", color="grey50") +
+        labs(title="Method Agreement: GSVA vs Z-Score",
+             subtitle=paste0("Pearson r = ", round(cor_methods, 3))) +
+        theme_bw(base_size=12)
+    
+    ggsave(paste0(output_prefix, "_Method_Agreement_mqc.png"), p_agreement, 
+           width=8, height=6)
+    
+    # Use Z-scores for stats (more robust)
+    final_scores <- z_res
+    scoring_label <- "Z-Score (Robust for small gene sets)"
+} else if(SCORING_METHOD == "zscore") {
+    final_scores <- z_res
+    scoring_label <- "Z-Score"
+} else {
+    final_scores <- gsva_res
+    scoring_label <- "GSVA"
+}
+
+cat(sprintf("→ Using %s for downstream analysis\n", scoring_label))
 
 # ==============================================================================
 # 4. PLASTICITY (ENTROPY)
 # ==============================================================================
-add_header("3. Plasticity (Entropy Analysis)")
-add_explainer("Shannon Entropy", "Measures the 'confusion' of a cell's identity. High entropy means the sample expresses a mix of all subtypes.")
+cat("LOG [4/12]: Plasticity Analysis...\n")
 
-cat("LOG [4/8]: Calculating Entropy...\n")
-calc_entropy <- function(scores) {
-    probs <- exp(scores) / sum(exp(scores))
-    -sum(probs * log(probs))
+calc_entropy <- function(s) { 
+    p <- exp(s)/sum(exp(s))
+    -sum(p*log(p), na.rm=TRUE)
 }
-meta$Plasticity <- apply(gsva_res, 2, calc_entropy)
 
-plast_aov <- summary(aov(Plasticity ~ Classification, data=meta))
-plast_p <- plast_aov[[1]][["Pr(>F)"]][1]
+meta$Plasticity <- apply(final_scores, 2, calc_entropy)
+
+# Test Plasticity
+shapiro_p <- shapiro.test(meta$Plasticity)$p.value
+
+if(shapiro_p < 0.05) {
+    plast_test <- kruskal.test(Plasticity ~ Classification, data=meta)
+    plast_p <- plast_test$p.value
+    plast_method <- "Kruskal-Wallis"
+} else {
+    plast_aov <- aov(Plasticity ~ Classification, data=meta)
+    plast_p <- summary(plast_aov)[[1]][["Pr(>F)"]][1]
+    plast_method <- "ANOVA"
+}
 
 p_plast <- ggplot(meta, aes(x=Classification, y=Plasticity, fill=Classification)) +
-    geom_boxplot(alpha=0.6) + geom_jitter(width=0.1, size=3) +
-    scale_fill_manual(values=grp_cols) +
-    labs(title="Subtype Plasticity", subtitle=paste0("ANOVA P = ", safe_format(plast_p))) +
-    theme_bw(base_size=14)
+    geom_boxplot(alpha=0.6, outlier.shape=NA) + 
+    geom_jitter(width=0.1, size=3, alpha=0.7) +
+    scale_fill_manual(values=c("#1f77b4", "#ff7f0e", "#d62728")) +
+    labs(title="Cellular Plasticity (Shannon Entropy)", 
+         subtitle=paste0(plast_method, " P=", safe_format(plast_p))) + 
+    theme_bw(base_size=14) +
+    theme(legend.position="none")
 
-plast_png <- paste0(output_prefix, "_Plasticity_Entropy_mqc.png")
-ggsave(plast_png, p_plast, width=7, height=6, dpi=300)
-add_image_base64(plast_png, "Figure 3: Plasticity Score. Higher entropy suggests cells are less differentiated.")
+ggsave(paste0(output_prefix, "_Plasticity_Entropy_mqc.png"), p_plast, width=6, height=6)
 
 # ==============================================================================
-# 5. HIGH-SENSITIVITY STATS (LIMMA & VARIANCE)
+# 5. HEATMAPS & CORRELATION
 # ==============================================================================
-add_header("4. Statistical Analysis (Limma & Variance)")
-add_explainer("Limma (Empirical Bayes)", "Detects differential subtype activity.")
-add_explainer("Bartlett's Test", "Tests if subtype DIVERSITY (variance) changes.")
+cat("LOG [5/12]: Heatmaps & Co-evolution...\n")
 
-cat("LOG [5/8]: Running Limma...\n")
+# A. Score Heatmap
+col_ann <- HeatmapAnnotation(
+    Class = meta$Classification,
+    col = list(Class = c(
+        "Culture_U2" = "#1f77b4", 
+        "Primary_U2" = "#ff7f0e", 
+        "Recurrent_U2" = "#d62728"
+    ))
+)
+
+ht <- Heatmap(
+    final_scores, 
+    name = "Score", 
+    top_annotation = col_ann,
+    col = colorRamp2(c(-1, 0, 1), c("blue", "white", "red")), 
+    cluster_columns = FALSE,
+    column_order = order(meta$Classification)
+)
+
+png(paste0(output_prefix, "_Score_Heatmap_mqc.png"), 
+    width=10, height=6, units="in", res=300)
+draw(ht)
+dev.off()
+
+# B. Signature Co-evolution (Correlation Matrix)
+sig_cor <- cor(t(final_scores), method="pearson")
+
+ht_cor <- Heatmap(
+    sig_cor, 
+    name = "Pearson\nCorr", 
+    col = colorRamp2(c(-1, 0, 1), c("blue", "white", "red")),
+    column_title = "Signature Co-evolution Across Samples"
+)
+
+png(paste0(output_prefix, "_Sig_Correlation_mqc.png"), 
+    width=7, height=6, units="in", res=300)
+draw(ht_cor)
+dev.off()
+
+# ==============================================================================
+# 6. ROBUST LIMMA (WITH ARRAY WEIGHTS)
+# ==============================================================================
+cat("LOG [6/12]: Robust Stats with arrayWeights...\n")
 
 design <- model.matrix(~0 + meta$Classification)
 colnames(design) <- levels(meta$Classification)
+
+# Calculate sample weights (down-weight outliers)
+aw <- arrayWeights(final_scores, design)
+
+cat("\n📊 Sample Reliability Weights (lower = noisier):\n")
+weight_df <- data.frame(Sample=names(aw), Weight=round(aw, 3), 
+                       Group=meta[names(aw), "Classification"])
+print(weight_df[order(weight_df$Weight), ])
+
 cont.matrix <- makeContrasts(
-    Cult_vs_Prim = Culture_U2 - Primary_U2,
-    Rec_vs_Prim  = Recurrent_U2 - Primary_U2,
-    Rec_vs_Cult  = Recurrent_U2 - Culture_U2,
+    Prim_vs_Cult = Primary_U2 - Culture_U2, 
+    Rec_vs_Cult = Recurrent_U2 - Culture_U2, 
+    Rec_vs_Prim = Recurrent_U2 - Primary_U2, 
     levels = design
 )
-fit <- lmFit(gsva_res, design)
+
+# Fit WITH weights (critical for small n)
+fit <- lmFit(final_scores, design, weights=aw) 
 fit <- contrasts.fit(fit, cont.matrix)
 fit <- eBayes(fit)
 
-limma_res <- data.frame()
-for(coef in colnames(cont.matrix)) {
-    tmp <- topTable(fit, coef=coef, number=Inf)
-    tmp$Subtype <- rownames(tmp)
-    tmp$Comparison <- coef
-    limma_res <- rbind(limma_res, tmp)
+all_coefs <- colnames(cont.matrix)
+
+# ==============================================================================
+# 7. MULTI-FDR SENSITIVITY & VOLCANOES
+# ==============================================================================
+cat("LOG [7/12]: Multi-FDR Sensitivity Analysis...\n")
+
+sig_counts <- data.frame(FDR_Threshold=FDR_THRESHOLDS, Label=FDR_LABELS)
+for(c in all_coefs) sig_counts[[c]] <- 0
+
+for(i in 1:length(FDR_THRESHOLDS)) {
+    thresh <- FDR_THRESHOLDS[i]
+    lbl <- FDR_LABELS[i]
+    
+    stats_out <- data.frame(Signature=rownames(final_scores))
+    
+    for(coef in all_coefs) {
+        tt <- topTable(fit, coef=coef, number=Inf, adjust.method="BH")
+        
+        stats_out[[paste0(coef, "_logFC")]] <- round(tt[stats_out$Signature, "logFC"], 3)
+        stats_out[[paste0(coef, "_adjP")]] <- safe_format(tt[stats_out$Signature, "adj.P.Val"])
+        stats_out[[paste0(coef, "_Sig")]] <- ifelse(tt[stats_out$Signature, "adj.P.Val"] < thresh, "Yes", "No")
+        
+        sig_counts[i, coef] <- sum(tt[, "adj.P.Val"] < thresh, na.rm=TRUE)
+        
+        # Volcano plot
+        volc_data <- data.frame(
+            Signature = rownames(tt), 
+            logFC = tt$logFC, 
+            negLogP = -log10(tt$adj.P.Val), 
+            Significant = tt$adj.P.Val < thresh
+        )
+        
+        p_vol <- ggplot(volc_data, aes(x=logFC, y=negLogP, color=Significant)) +
+            geom_point(size=4, alpha=0.7) + 
+            geom_text_repel(data=subset(volc_data, Significant), 
+                           aes(label=Signature), size=3.5) +
+            geom_hline(yintercept=-log10(thresh), linetype="dashed", color="red") +
+            geom_vline(xintercept=0, linetype="dashed", color="grey50") +
+            scale_color_manual(values=c("grey60", "red")) + 
+            theme_bw(base_size=12) +
+            labs(title=paste("Volcano:", coef), subtitle=lbl, 
+                 x="log2 Fold Change", y="-log10(Adj P)")
+        
+        ggsave(paste0(output_prefix, "_Volcano_", gsub("_", "", coef), "_FDR", 
+                     gsub("[^0-9]", "", as.character(thresh)), "_mqc.png"), 
+               p_vol, width=7, height=6)
+    }
+    
+    # Save table
+    tf <- paste0(dirname(output_prefix), "/fdr_", 
+                gsub("[^0-9]", "", as.character(thresh)), "_stats_mqc.tsv")
+    cat(paste0("# id: 'stats_", gsub("[^0-9]", "", as.character(thresh)), 
+               "'\n# section_name: 'Stats: ", lbl, 
+               "'\n# plot_type: 'table'\n"), file=tf)
+    write.table(stats_out, file=tf, sep="\t", quote=FALSE, row.names=FALSE, append=TRUE)
 }
-trend_res <- limma_res %>% dplyr::filter(P.Value < 0.15) %>% 
-    dplyr::select(Subtype, Comparison, logFC, P.Value, adj.P.Val) %>% arrange(P.Value)
-trend_res$P.Value <- sapply(trend_res$P.Value, safe_format)
-trend_res$adj.P.Val <- sapply(trend_res$adj.P.Val, safe_format)
-add_table(trend_res, "Differential Trajectories (Limma P < 0.15)")
 
-var_df <- data.frame()
-for(sig in rownames(gsva_res)) {
-    scores <- gsva_res[sig, ]
-    bp <- tryCatch(bartlett.test(scores ~ meta$Classification)$p.value, error=function(e) NA)
-    var_df <- rbind(var_df, data.frame(Subtype=sig, Bartlett_Variance_P=safe_format(bp)))
+# ==============================================================================
+# 8. TRAJECTORY PLOTS
+# ==============================================================================
+cat("LOG [8/12]: Signature Trajectories...\n")
+
+for(sig in rownames(final_scores)) {
+    df <- data.frame(
+        Score = final_scores[sig, ], 
+        Class = meta$Classification
+    )
+    
+    summ <- df %>% 
+        group_by(Class) %>% 
+        summarise(Mean = mean(Score)) %>% 
+        mutate(Num = as.numeric(Class))
+    
+    p <- ggplot(df, aes(x=as.numeric(Class), y=Score)) +
+        geom_line(data=summ, aes(x=Num, y=Mean, group=1), 
+                 color="darkred", linewidth=1.2, alpha=0.7) +
+        geom_point(aes(fill=Class), size=4, shape=21, alpha=0.8) + 
+        scale_fill_manual(values=c("#1f77b4", "#ff7f0e", "#d62728")) +
+        scale_x_continuous(breaks=1:3, labels=levels(meta$Classification)) +
+        theme_bw(base_size=12) + 
+        labs(title=sig, y="Score", x="Stage") +
+        theme(legend.position="none")
+    
+    ggsave(paste0(output_prefix, "_Trajectory_", sig, "_mqc.png"), p, width=6, height=4)
 }
-add_table(var_df, "Heterogeneity Tests (Variance Differences)")
 
 # ==============================================================================
-# 6. GLOBAL HEATMAP
+# 9. SENSITIVITY SUMMARY
 # ==============================================================================
-add_header("5. Subtype Landscape")
-cat("LOG [6/8]: Generating Heatmap...\n")
+cat("LOG [9/12]: FDR Sensitivity Summary...\n")
 
-ha <- HeatmapAnnotation(
-    Plasticity = anno_barplot(meta$Plasticity, height = unit(2, "cm")),
-    Group = meta$Classification,
-    col = list(Group = grp_cols)
-)
+sig_counts_long <- sig_counts %>%
+    pivot_longer(cols=all_of(all_coefs), names_to="Contrast", values_to="N_Significant") %>%
+    mutate(Contrast = factor(Contrast, levels=all_coefs))
 
-ht <- Heatmap(gsva_scaled, name="Z-Score", 
-    top_annotation = ha,
-    column_split = meta$Classification,
-    cluster_rows = TRUE, cluster_columns = TRUE,
-    col = colorRamp2(c(-2, 0, 2), c("blue", "white", "red")),
-    column_title = "Global Subtype Landscape")
+p_sensitivity <- ggplot(sig_counts_long, aes(x=Label, y=N_Significant, fill=Contrast)) +
+    geom_bar(stat="identity", position="dodge", alpha=0.8) +
+    geom_text(aes(label=N_Significant), position=position_dodge(0.9), vjust=-0.5, size=3) +
+    scale_fill_manual(values=c("#1f77b4", "#ff7f0e", "#d62728")) +
+    labs(title="FDR Sensitivity: Significant Signatures by Threshold",
+         subtitle=paste0(nrow(final_scores), " signatures tested"),
+         x="FDR Threshold", y="N Significant", fill="Contrast") +
+    theme_bw(base_size=12) +
+    theme(axis.text.x = element_text(angle=45, hjust=1), legend.position = "bottom") +
+    ylim(0, nrow(final_scores) + 0.5)
 
-ht_png <- paste0(output_prefix, "_Subtype_Heatmap_mqc.png")
-png(ht_png, width=10, height=10, units="in", res=300)
-draw(ht)
-dev.off()
-add_image_base64(ht_png, "Figure 4: Global Subtype Heatmap.")
+ggsave(paste0(output_prefix, "_FDR_Sensitivity_mqc.png"), p_sensitivity, width=10, height=7)
+
+# Save summary table
+summary_file <- paste0(dirname(output_prefix), "/fdr_sensitivity_summary_mqc.tsv")
+cat("# id: 'fdr_sensitivity'\n# section_name: 'FDR Sensitivity'\n# plot_type: 'table'\n", 
+    file=summary_file)
+write.table(sig_counts, file=summary_file, sep="\t", quote=FALSE, row.names=FALSE, append=TRUE)
 
 # ==============================================================================
-# 7. LLM SUMMARY & FINALIZE
+# 10. EXPORT DATA
 # ==============================================================================
-llm_text <- paste0(
-    "SUMMARY FOR LLM:\n",
-    "- Global Structure: PERMANOVA p-value = ", sub_txt, "\n",
-    "- Plasticity (Entropy): ANOVA p-value = ", safe_format(plast_p), "\n",
-    "- Top Differential Subtypes (Limma P<0.15): ", paste(trend_res$Subtype[1:3], collapse=", "), "\n",
-    "- Heterogeneity Change (Bartlett P<0.05): ", paste(var_df$Subtype[as.numeric(var_df$Bartlett_Variance_P)<0.05], collapse=", "), "\n"
-)
-add_llm_summary(llm_text)
+cat("LOG [10/12]: Exporting Data...\n")
 
-add_citations()
-finish_html(output_prefix)
-cat("\n=== PIPELINE COMPLETE ===\n")
+write.csv(t(final_scores), paste0(output_prefix, "_Scores.csv"))
+write.csv(meta, paste0(output_prefix, "_Metadata.csv"))
+write.csv(weight_df, paste0(output_prefix, "_SampleWeights.csv"), row.names=FALSE)
+
+# ==============================================================================
+# 11. HTML SUMMARY
+# ==============================================================================
+cat("LOG [11/12]: Generating HTML Summary...\n")
+
+summary_html <- paste0(dirname(output_prefix), "/analysis_summary_mqc.html")
+sink(summary_html)
+
+cat("
+<div style='background-color:#f8f9fa; padding:15px; border:1px solid #ddd; margin-bottom:20px;'>
+    <h3>🔬 Analysis Summary (v13 - Robust Small-N Edition)</h3>
+    
+    <h4>Metadata</h4>
+    <pre>", paste(names(group_sizes), group_sizes, sep=": ", collapse="\n"), "</pre>
+    
+    <h4>Scoring Method</h4>
+    <p><strong>", scoring_label, "</strong></p>
+    ", if(SCORING_METHOD == "both") paste0("<p>Method correlation: r = ", round(cor_methods, 3), "</p>") else "", "
+    
+    <h4>Global Structure</h4>
+    <ul>
+        <li>PERMANOVA: R²=", round(perm_r2, 3), ", P=", safe_format(perm_p), " ", interpret_p(perm_p), "</li>
+        <li>Plasticity (", plast_method, "): P=", safe_format(plast_p), " ", interpret_p(plast_p), "</li>
+    </ul>
+    
+    <h4>Sample Quality Weights</h4>
+    <table style='border-collapse: collapse; margin:10px 0;'>
+        <tr style='background:#ddd;'><th style='padding:5px; border:1px solid #999;'>Sample</th>
+            <th style='padding:5px; border:1px solid #999;'>Weight</th>
+            <th style='padding:5px; border:1px solid #999;'>Group</th></tr>
+")
+
+for(j in order(weight_df$Weight)) {
+    cat(sprintf("        <tr><td style='padding:5px; border:1px solid #ccc;'>%s</td>
+            <td style='padding:5px; border:1px solid #ccc;'>%.3f</td>
+            <td style='padding:5px; border:1px solid #ccc;'>%s</td></tr>\n",
+            weight_df$Sample[j], weight_df$Weight[j], weight_df$Group[j]))
+}
+
+cat("    </table>
+    <p style='font-size:11px; color:#666;'><em>Lower weights indicate noisy/outlier samples that were down-weighted in statistics.</em></p>
+    
+    <h4>PCA Drivers</h4>
+    <pre style='font-size:10px;'>", pc_drivers, "</pre>
+    
+    <h4>FDR Sensitivity Results</h4>
+")
+
+cat("    <table style='border-collapse: collapse; width:100%;'>
+        <tr style='background:#ddd;'><th style='padding:5px; border:1px solid #999;'>Threshold</th>")
+for(coef in all_coefs) {
+    cat(sprintf("<th style='padding:5px; border:1px solid #999;'>%s</th>", gsub("_", " ", coef)))
+}
+cat("</tr>\n")
+
+for(i in 1:nrow(sig_counts)) {
+    cat(sprintf("        <tr><td style='padding:5px; border:1px solid #ccc;'><strong>%s</strong></td>", 
+                sig_counts$Label[i]))
+    for(coef in all_coefs) {
+        cat(sprintf("<td style='padding:5px; border:1px solid #ccc; text-align:center;'>%d</td>", 
+                   sig_counts[i, coef]))
+    }
+    cat("</tr>\n")
+}
+
+cat("    </table>
+</div>
+
+<div style='font-size:11px; color:#666; margin-top:20px;'>
+    <h4>Methods</h4>
+    <ul>
+        <li><strong>Scoring:</strong> ", scoring_label, "</li>
+        <li><strong>Statistical Model:</strong> limma with arrayWeights (outlier down-weighting)</li>
+        <li><strong>FDR Correction:</strong> Benjamini-Hochberg</li>
+        <li><strong>Software:</strong> R ", as.character(R.version.string), 
+        ", limma ", as.character(packageVersion("limma")), "</li>
+    </ul>
+</div>
+")
+
+sink()
+
+# ==============================================================================
+# 12. SESSION INFO
+# ==============================================================================
+cat("LOG [12/12]: Saving Session Info...\n")
+writeLines(capture.output(sessionInfo()), paste0(dirname(output_prefix), "/sessionInfo.txt"))
+
+cat("\n=== V13 PIPELINE COMPLETE ===\n")
+cat("✓ Dual scoring methods with agreement metrics\n")
+cat("✓ Sample quality weights calculated\n")
+cat("✓ Signature co-evolution matrix\n")
+cat("✓ Multi-FDR sensitivity analysis\n")
+cat("\nFDR Summary:\n")
+print(sig_counts)
