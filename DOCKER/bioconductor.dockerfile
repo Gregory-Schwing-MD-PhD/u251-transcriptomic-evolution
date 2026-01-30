@@ -115,4 +115,10 @@ RUN R -e "install.packages(c( \
 RUN R -e "install.packages('car', repos='http://cran.rstudio.com/')"
 RUN R -e "BiocManager::install('limma')"
 
+# ------------------------------------------------------------------------------
+# LAYER 13: Report Generation Utilities (Base64 for self-contained HTML)
+# ------------------------------------------------------------------------------
+RUN R -e "install.packages('base64enc', repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
+
