@@ -109,4 +109,10 @@ RUN R -e "install.packages(c( \
     'knitr' \
     ), repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# LAYER 12: High-Sensitivity Stats (Car + Limma)
+# ------------------------------------------------------------------------------
+RUN R -e "install.packages('car', repos='http://cran.rstudio.com/')"
+RUN R -e "BiocManager::install('limma')"
+
 WORKDIR /data
