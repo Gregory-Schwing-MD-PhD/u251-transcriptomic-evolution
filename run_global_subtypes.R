@@ -1,13 +1,13 @@
 #!/usr/bin/env Rscript
 
 # ------------------------------------------------------------------------------
-# GLOBAL SUBTYPES ANALYSIS v14.0 (Rich Narrative Edition)
+# GLOBAL SUBTYPES ANALYSIS v14.1 (Trajectory Sorting + HTML Fixes)
 # ------------------------------------------------------------------------------
-# Key improvements:
-# - Removed individual volcano plots
-# - Unified trajectory plot showing all signatures
-# - Comprehensive narrative report with statistical decisions
-# - Enhanced statistical reporting throughout
+# Key improvements over v14.0:
+# - Sorts trajectory plots by correlation (Increasing → Decreasing)
+# - Fixes HTML interpret_p() to return plain text (was adding HTML in wrong place)
+# - Adds patchwork library
+# - More robust error handling
 # ------------------------------------------------------------------------------
 
 set.seed(12345)
@@ -43,17 +43,28 @@ safe_format <- function(x, digits=3) {
     if (length(x) > 1) return(paste(sapply(x, safe_format, digits=digits), collapse=", "))
     if (is.na(x)) return("NA")
     if (!is.numeric(x)) return(as.character(x))
-    if (x < 0.001) return(formatC(x, format="e", digits=2))
+    if (abs(x) < 0.001 && x != 0) return(formatC(x, format="e", digits=2))
     return(round(x, digits))
 }
 
-interpret_p <- function(p) {
+# Plain text version for stat_log
+interpret_p_text <- function(p) {
     if (is.null(p) || length(p) == 0 || is.na(p)) return("NA")
     if (p < 0.001) return("*** (highly significant)")
     if (p < 0.01) return("** (very significant)")
     if (p < 0.05) return("* (significant)")
     if (p < 0.10) return(". (trend)")
     return("ns (not significant)")
+}
+
+# HTML version for final report
+interpret_p_html <- function(p) {
+    if (is.null(p) || length(p) == 0 || is.na(p)) return("<span class='ns'>NA</span>")
+    if (p < 0.001) return("<span class='significant'>***</span>")
+    if (p < 0.01) return("<span class='significant'>**</span>")
+    if (p < 0.05) return("<span class='significant'>*</span>")
+    if (p < 0.10) return("<span class='trend'>.</span>")
+    return("<span class='ns'>ns</span>")
 }
 
 # Statistical narrative logger
@@ -140,8 +151,8 @@ perm_f <- if(!is.null(perm_res)) perm_res$F[1] else NA
 
 add_stat_log("PERMANOVA Test", sprintf(
     "Test: Classification effect on multivariate gene expression\n  F-statistic = %.3f\n  R² = %.3f (%.1f%% of variance explained)\n  P-value = %s %s\n  Interpretation: %s",
-    perm_f, perm_r2, perm_r2*100, safe_format(perm_p), interpret_p(perm_p),
-    if(perm_p < 0.05) "Groups show distinct transcriptional profiles" else "Groups are not significantly different"
+    perm_f, perm_r2, perm_r2*100, safe_format(perm_p), interpret_p_text(perm_p),
+    if(!is.na(perm_p) && perm_p < 0.05) "Groups show distinct transcriptional profiles" else "Groups are not significantly different"
 ))
 
 pca <- prcomp(t(mat_sig))
@@ -373,7 +384,7 @@ if(shapiro_p < 0.05) {
     add_stat_log("Plasticity: Group Comparison", sprintf(
         "Kruskal-Wallis H-test\n  H = %.3f, df = %d\n  P = %s %s\n  Interpretation: %s",
         plast_stat, plast_test$parameter,
-        safe_format(plast_p), interpret_p(plast_p),
+        safe_format(plast_p), interpret_p_text(plast_p),
         if(plast_p < 0.05) "Significant differences in plasticity across groups" else "No significant differences in plasticity"
     ))
 } else {
@@ -386,7 +397,7 @@ if(shapiro_p < 0.05) {
     add_stat_log("Plasticity: Group Comparison", sprintf(
         "One-way ANOVA\n  F(%d,%d) = %.3f\n  P = %s %s\n  Interpretation: %s",
         plast_summary[["Df"]][1], plast_summary[["Df"]][2],
-        plast_f, safe_format(plast_p), interpret_p(plast_p),
+        plast_f, safe_format(plast_p), interpret_p_text(plast_p),
         if(plast_p < 0.05) "Significant differences in plasticity across groups" else "No significant differences in plasticity"
     ))
 }
@@ -412,7 +423,7 @@ p_plast <- ggplot(meta, aes(x=Classification, y=Plasticity, fill=Classification)
     stat_summary(fun=mean, geom="point", shape=23, size=4, color="black", fill="white") +
     scale_fill_manual(values=c("#1f77b4", "#ff7f0e", "#d62728")) +
     labs(title="Cellular Plasticity (Shannon Entropy)", 
-         subtitle=paste0(plast_method, " P=", safe_format(plast_p), " ", interpret_p(plast_p)),
+         subtitle=paste0(plast_method, " P=", safe_format(plast_p), " ", interpret_p_text(plast_p)),
          caption="Diamond = mean, box = median ± IQR") + 
     theme_bw(base_size=14) +
     theme(legend.position="none")
@@ -535,7 +546,7 @@ add_stat_log("Linear Model Setup", sprintf(
 ))
 
 # ==============================================================================
-# 7. UNIFIED TRAJECTORY PLOT (ALL SIGNATURES)
+# 7. UNIFIED TRAJECTORY PLOT (SORTED BY TREND) ⭐ KEY IMPROVEMENT
 # ==============================================================================
 cat("LOG [7/10]: Creating Unified Trajectory Visualization...\n")
 
@@ -558,7 +569,17 @@ traj_summary <- traj_data %>%
     group_by(Signature, Class, Stage) %>%
     summarise(Mean = mean(Score), SE = sd(Score)/sqrt(n()), .groups="drop")
 
-# Create faceted trajectory plot
+# ⭐ SORT SIGNATURES BY CORRELATION WITH STAGE (Increasing → Decreasing)
+trend_order <- traj_data %>%
+    group_by(Signature) %>%
+    summarise(Cor = cor(Stage, Score, method="spearman"), .groups="drop") %>%
+    arrange(desc(Cor)) %>%
+    pull(Signature)
+
+traj_data$Signature <- factor(traj_data$Signature, levels=trend_order)
+traj_summary$Signature <- factor(traj_summary$Signature, levels=trend_order)
+
+# Create faceted trajectory plot with sorted panels
 p_unified_traj <- ggplot(traj_data, aes(x=Stage, y=Score, group=Signature)) +
     geom_line(data=traj_summary, aes(x=Stage, y=Mean, color=Signature), 
              linewidth=1.2, alpha=0.8) +
@@ -571,7 +592,7 @@ p_unified_traj <- ggplot(traj_data, aes(x=Stage, y=Score, group=Signature)) +
     scale_color_brewer(palette="Set1") +
     scale_shape_manual(values=c(21, 24, 22)) +
     labs(title="Signature Trajectories Across Evolution",
-         subtitle="Lines show group means ± SE; points are individual samples",
+         subtitle="Ordered by trend: Increasing (top) → Decreasing (bottom) | Lines = group means ± SE",
          x="Stage", y="Signature Score") +
     theme_bw(base_size=11) +
     theme(
@@ -592,10 +613,11 @@ traj_models <- traj_data %>%
         Trend_P = cor.test(Stage, Score, method="spearman")$p.value,
         Direction = ifelse(Correlation_with_Stage > 0, "Increasing", "Decreasing"),
         .groups="drop"
-    )
+    ) %>%
+    arrange(desc(Correlation_with_Stage))  # Match plot order
 
 add_stat_log("Trajectory Analysis", sprintf(
-    "Signature evolution patterns:\n  %s",
+    "Signature evolution patterns (sorted by trend strength):\n  %s",
     paste(capture.output(print(traj_models, row.names=FALSE)), collapse="\n  ")
 ))
 
@@ -676,6 +698,7 @@ write.csv(t(final_scores), paste0(output_prefix, "_Scores.csv"))
 write.csv(meta, paste0(output_prefix, "_Metadata.csv"))
 write.csv(weight_df, paste0(output_prefix, "_SampleWeights.csv"), row.names=FALSE)
 write.csv(sig_counts, paste0(output_prefix, "_FDR_Sensitivity.csv"), row.names=FALSE)
+write.csv(traj_models, paste0(output_prefix, "_Trajectory_Statistics.csv"), row.names=FALSE)
 
 # ==============================================================================
 # 10. RICH NARRATIVE HTML REPORT
@@ -702,13 +725,15 @@ tr:hover { background-color: #f5f5f5; }
 .highlight { background-color: #fff3cd; padding: 2px 6px; border-radius: 3px; }
 .significant { color: #28a745; font-weight: bold; }
 .not-significant { color: #6c757d; }
+.trend { color: #fd7e14; font-weight: bold; }
+.ns { color: #adb5bd; }
 </style>
 </head>
 <body>
 
 <div class='header'>
 <h1>🧬 U251 Global Subtype Evolution Analysis</h1>
-<h3>Comprehensive Statistical Report v14.0</h3>
+<h3>Comprehensive Statistical Report v14.1</h3>
 <p>Analysis Date: ", Sys.Date(), "</p>
 <p>Scoring Method: <strong>", scoring_label, "</strong></p>
 </div>
@@ -732,11 +757,11 @@ cat("</div></div>
 <div class='stat-content'>")
 
 # Summary of key statistical findings
-cat(sprintf("PERMANOVA Test: P = %s %s\n", safe_format(perm_p), interpret_p(perm_p)))
+cat(sprintf("PERMANOVA Test: P = %s %s\n", safe_format(perm_p), interpret_p_html(perm_p)))
 cat(sprintf("  → Groups %s distinct transcriptional signatures\n\n", 
-            if(perm_p < 0.05) "SHOW" else "DO NOT SHOW"))
+            if(!is.na(perm_p) && perm_p < 0.05) "SHOW" else "DO NOT SHOW"))
 
-cat(sprintf("Plasticity Analysis: P = %s %s\n", safe_format(plast_p), interpret_p(plast_p)))
+cat(sprintf("Plasticity Analysis: P = %s %s\n", safe_format(plast_p), interpret_p_html(plast_p)))
 cat(sprintf("  → Cellular plasticity %s across evolution\n\n",
             if(plast_p < 0.05) "CHANGES SIGNIFICANTLY" else "remains stable"))
 
@@ -817,6 +842,7 @@ Lower weights indicate potentially noisy samples that are down-weighted in the s
 <div class='section'>
 <h2>📊 Signature Evolution Trajectories</h2>
 <div class='stat-block'>
+<p style='margin-bottom: 15px; color: #666;'>Sorted by correlation strength (strongest increasing trends first)</p>
 <table>
 <tr><th>Signature</th><th>Correlation with Stage</th><th>Trend P-value</th><th>Direction</th><th>Significance</th></tr>")
 
@@ -850,6 +876,7 @@ cat("</table>
   • GSVA ", as.character(packageVersion("GSVA")), " (signature scoring)
   • vegan ", as.character(packageVersion("vegan")), " (PERMANOVA)
   • ComplexHeatmap ", as.character(packageVersion("ComplexHeatmap")), " (visualization)
+  • patchwork ", as.character(packageVersion("patchwork")), " (plot composition)
 
 <strong>Statistical Approach:</strong>
   • Scoring: ", scoring_label, "
@@ -858,6 +885,7 @@ cat("</table>
   • Multiple testing: Benjamini-Hochberg FDR correction
   • Normality testing: Shapiro-Wilk test
   • Group comparisons: Parametric (ANOVA) or non-parametric (Kruskal-Wallis) based on normality
+  • Trajectory trends: Spearman correlation with evolutionary stage
 
 <strong>Reproducibility:</strong>
   • Random seed: 12345
@@ -885,6 +913,7 @@ cat("</table>
 <li><strong>Shannon Entropy:</strong> Measure of cellular plasticity; higher = more plastic/undifferentiated</li>
 <li><strong>logFC:</strong> Log2 fold change; positive = higher in second group, negative = higher in first</li>
 <li><strong>Sample Weights:</strong> Quality metric; values ~1.0 are typical, <0.5 suggests noise</li>
+<li><strong>Spearman ρ:</strong> Correlation with stage; positive = increasing trend, negative = decreasing</li>
 </ul>
 </div>
 </div>
@@ -907,7 +936,7 @@ cat(sprintf("✓ Evaluated %d subtype signatures\n", nrow(final_scores)))
 cat(sprintf("✓ Statistical logs: %d entries\n", length(stat_log)))
 cat(sprintf("✓ Rich HTML report generated\n"))
 cat(sprintf("\nKey outputs:\n"))
-cat(sprintf("  • Unified trajectory plot\n"))
+cat(sprintf("  • Unified trajectory plot (SORTED by trend!)\n"))
 cat(sprintf("  • PCA with gene drivers\n"))
 cat(sprintf("  • Comprehensive statistical report\n"))
 cat(sprintf("  • No unnecessary volcano plots!\n\n"))
