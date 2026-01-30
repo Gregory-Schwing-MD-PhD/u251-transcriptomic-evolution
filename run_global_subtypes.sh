@@ -38,12 +38,10 @@ RESULTS_DIR="ANALYSIS/results_evolution"
 METADATA_FILE="ANALYSIS/metadata.csv"
 
 # --- OUTPUT CONFIGURATION ---
-# New directory to ensure no overwrites of previous reports
 OUT_DIR="ANALYSIS/results_global_subtypes"
-# This prefix + _mqc.png is what MultiQC looks for
 OUTPUT_PREFIX="${OUT_DIR}/Global_Subtypes"
 
-# 5. EXECUTE R ANALYSIS
+# 5. EXECUTE R ANALYSIS (Self-Contained Report)
 echo "RUNNING GLOBAL SUBTYPE & EVOLUTION ANALYSIS..."
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" \
     Rscript -e "options(warn=1); source('run_global_subtypes.R')" \
@@ -51,11 +49,10 @@ singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" \
     "$OUTPUT_PREFIX" \
     "$METADATA_FILE"
 
-# 6. RUN MULTIQC
-echo "RUNNING FINAL MULTIQC..."
+# 6. RUN MULTIQC (Optional but good for tracking)
+echo "RUNNING MULTIQC..."
 MULTIQC_CONTAINER="docker://multiqc/multiqc:v1.33"
 
-# Points explicitly to OUT_DIR where plots are saved
 singularity exec --bind $PWD:/data --pwd /data $MULTIQC_CONTAINER multiqc \
     "$OUT_DIR" \
     --force \
