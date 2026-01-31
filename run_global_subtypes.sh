@@ -97,9 +97,9 @@ echo "========================================"
 
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" \
     Rscript run_global_subtypes.R \
-    "$RESULTS_DIR" \
-    "$OUTPUT_PREFIX" \
-    "$METADATA_FILE" || {
+    --input "$VST_FILE" \
+    --out "$OUTPUT_PREFIX" \
+    --meta "$METADATA_FILE" || {
         echo "ERROR: R analysis failed"
         exit 1
     }
