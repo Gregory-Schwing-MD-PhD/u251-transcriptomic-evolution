@@ -61,7 +61,7 @@ echo "║  STEP 1: Ultimate Pathway Enrichment & Drug Discovery         ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" \
-    Rscript run_pathways_drugs_v5_ULTIMATE.R \
+    Rscript run_pathways_drugs_v6_ULTIMATE.R \
     "$VST_FILE" \
     "$RESULTS_DIR" \
     "$GMT_DIR" \
