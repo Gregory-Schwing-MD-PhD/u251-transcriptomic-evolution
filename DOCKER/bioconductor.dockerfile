@@ -136,24 +136,28 @@ RUN R -e "install.packages('patchwork', repos='http://cran.rstudio.com/')"
 RUN R -e "install.packages('optparse', repos='http://cran.rstudio.com/')"
 
 # ------------------------------------------------------------------------------
-# # LAYER 17: Trajectory Analysis (Jonckheere-Terpstra)
-# # ------------------------------------------------------------------------------
+# LAYER 17: Trajectory Analysis (Jonckheere-Terpstra)
+# ------------------------------------------------------------------------------
 RUN R -e "install.packages('clinfun', repos='http://cran.rstudio.com/')"
 
 # ------------------------------------------------------------------------------
-# # LAYER 18: Ridgeplots (Ultimate GSEA v5 Requirement)
-# # ------------------------------------------------------------------------------
+# LAYER 18: Ridgeplots (Ultimate GSEA v5 Requirement)
+# ------------------------------------------------------------------------------
 RUN R -e "install.packages('ggridges', repos='http://cran.rstudio.com/')"
 
-# LAYER 19: Database queries
+# ------------------------------------------------------------------------------
+# LAYER 19: Database Queries
+# ------------------------------------------------------------------------------
 RUN R -e "install.packages(c('httr', 'jsonlite'), repos='http://cran.rstudio.com/')"
-#
-# # LAYER 20: KEGG visualization
+
+# ------------------------------------------------------------------------------
+# LAYER 20: KEGG Visualization
+# ------------------------------------------------------------------------------
 RUN R -e "BiocManager::install('pathview')"
-#
-# # LAYER 21: Reactome integration
+
+# ------------------------------------------------------------------------------
+# LAYER 21: Reactome Integration
+# ------------------------------------------------------------------------------
 RUN R -e "BiocManager::install('ReactomePA')"
 
-
 WORKDIR /data
-
