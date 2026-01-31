@@ -837,10 +837,38 @@ add_contrast_header <- function(cid, n_genes, n_up, n_dn) {
 add_drug_profile_section <- function(drug_profiles) {
     if(is.null(drug_profiles) || length(drug_profiles) == 0) return()
     
-    html_buffer <<- c(html_buffer, "<div class='section-header drug-header'>💊 Drug Profiles</div>")
+    html_buffer <<- c(html_buffer, "<div class='section-header drug-header'>💊 Drug Profiles (Sorted by NES - Most Therapeutic First)</div>")
     
     for(profile in drug_profiles) {
-        drug_card <- paste0("<div class='drug-profile-card'><h4>", clean_drug_name(profile$drug_name), "</h4>")
+        drug_card <- paste0("<div class='drug-profile-card'>")
+        
+        # HEADER with NES and FDR prominently displayed
+        nes_val <- if(!is.null(profile$NES)) round(profile$NES, 3) else NA
+        fdr_val <- if(!is.null(profile$p.adjust)) profile$p.adjust else NA
+        rank_val <- if(!is.null(profile$rank)) profile$rank else "?"
+        
+        nes_class <- if(!is.na(nes_val) && nes_val < -1.5) "bbb-score-high" else "bbb-score-med"
+        fdr_class <- if(!is.na(fdr_val) && fdr_val < 0.05) "bbb-score-high" else 
+                     if(!is.na(fdr_val) && fdr_val < 0.25) "bbb-score-med" else "bbb-score-low"
+        
+        drug_card <- paste0(drug_card,
+            "<h3 style='margin-top:0; color:#2c3e50;'>",
+            "#", rank_val, " - ", clean_drug_name(profile$drug_name), "</h3>",
+            "<div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin:15px 0;'>",
+            "<div style='background:#f0f8ff; padding:10px; border-radius:5px;'>",
+            "<strong>NES (Enrichment):</strong><br>",
+            "<span class='", nes_class, "' style='font-size:24px;'>", 
+            if(!is.na(nes_val)) paste0(nes_val, if(nes_val < -1.5) " ✓" else "") else "N/A", "</span><br>",
+            "<small style='color:#666;'>More negative = stronger therapeutic potential</small>",
+            "</div>",
+            "<div style='background:#fff5f5; padding:10px; border-radius:5px;'>",
+            "<strong>FDR (Significance):</strong><br>",
+            "<span class='", fdr_class, "' style='font-size:20px;'>",
+            if(!is.na(fdr_val)) formatC(fdr_val, format="e", digits=2) else "N/A", "</span><br>",
+            "<small style='color:#666;'>Lower = more statistically significant</small>",
+            "</div>",
+            "</div>"
+        )
         
         # ChEMBL
         if(!is.null(profile$chembl) && profile$chembl$source != "Unknown") {
@@ -1093,7 +1121,12 @@ for(f in contrasts) {
                         pathway_results_for_integration$ID[1]
                     } else { NULL }
                     
+                    # CRITICAL: Store NES and p.adjust from GSEA results
                     profile <- comprehensive_drug_profile(drug_name, pathway_genes, pathway_name)
+                    profile$NES <- top_cands$NES[i]
+                    profile$p.adjust <- top_cands$p.adjust[i]
+                    profile$setSize <- top_cands$setSize[i]
+                    profile$rank <- i
                     comprehensive_profiles[[i]] <- profile
                 }
                 
@@ -1116,10 +1149,16 @@ for(f in contrasts) {
     }
     
     # Drug-Pathway Integration
+    polypharm_drugs <- NULL
     if(!is.null(pathway_results_for_integration) && !is.null(drug_results_for_integration)) {
         cat("  > Drug-Pathway Integration...\n")
         create_drug_pathway_heatmap(pathway_results_for_integration, drug_results_for_integration, out_prefix, cid)
-        create_polypharm_network(drug_results_for_integration, pathway_results_for_integration, out_prefix, cid)
+        polypharm_drugs <- create_polypharm_network(drug_results_for_integration, pathway_results_for_integration, out_prefix, cid)
+        
+        # Store in summary
+        if(!is.null(polypharm_drugs) && length(polypharm_drugs) > 0) {
+            llm_summary[[cid]]$multi_target_drugs <- polypharm_drugs
+        }
     }
     
     # FIX: PPI Network (RESTORED!)
@@ -1203,7 +1242,11 @@ for(cid in names(llm_summary)) {
             drug_name <- clean_drug_name(profile$drug_name)
             
             row <- data.frame(
+                Rank = if(!is.null(profile$rank)) profile$rank else NA,
                 Drug = drug_name,
+                NES = if(!is.null(profile$NES)) round(profile$NES, 3) else NA,
+                FDR = if(!is.null(profile$p.adjust)) profile$p.adjust else NA,
+                SetSize = if(!is.null(profile$setSize)) profile$setSize else NA,
                 ChEMBL_ID = if(!is.null(profile$chembl$chembl_id)) profile$chembl$chembl_id else NA,
                 Phase = if(!is.null(profile$chembl$max_phase)) profile$chembl$max_phase else NA,
                 MW = if(!is.null(profile$chembl$molecular_weight)) as.numeric(profile$chembl$molecular_weight) else NA,
@@ -1225,9 +1268,7 @@ for(cid in names(llm_summary)) {
             drug_export <- rbind(drug_export, row)
         }
         
-        # Sort by BBB score descending
-        drug_export <- drug_export %>% arrange(desc(BBB_Score))
-        
+        # Already sorted by rank (which follows NES order)
         write.csv(drug_export, 
                   paste0(dirname(out_prefix), "/", cid, "_Drug_Profiles_Comprehensive.csv"),
                   row.names = FALSE)
@@ -1272,6 +1313,45 @@ for(cid in names(llm_summary)) {
         ""
     )
     
+    # TOP 10 DRUGS QUICK REFERENCE
+    if(!is.null(summ$drug_profiles) && length(summ$drug_profiles) > 0) {
+        txt_prompt <- c(txt_prompt,
+            "TOP 10 DRUG CANDIDATES - QUICK REFERENCE:",
+            paste0(rep("=", 79), collapse=""),
+            sprintf("%-4s %-30s %-8s %-10s %-8s %-6s", "Rank", "Drug", "NES", "FDR", "BBB", "Phase"),
+            paste0(rep("-", 79), collapse="")
+        )
+        
+        for(i in 1:min(10, length(summ$drug_profiles))) {
+            profile <- summ$drug_profiles[[i]]
+            drug_name <- clean_drug_name(profile$drug_name)
+            nes_str <- if(!is.null(profile$NES)) sprintf("%.3f", profile$NES) else "N/A"
+            fdr_str <- if(!is.null(profile$p.adjust)) sprintf("%.2e", profile$p.adjust) else "N/A"
+            bbb_str <- if(!is.null(profile$bbb$bbb_score)) sprintf("%.3f", profile$bbb$bbb_score) else "N/A"
+            phase_str <- if(!is.null(profile$chembl$max_phase)) as.character(profile$chembl$max_phase) else "N/A"
+            
+            # Add stars for exceptional candidates
+            stars <- ""
+            if(!is.null(profile$NES) && !is.null(profile$bbb$bbb_score)) {
+                if(profile$NES < -1.5 && profile$bbb$bbb_score >= 0.5) stars <- " ★★★"
+                else if(profile$NES < -1.2 && profile$bbb$bbb_score >= 0.5) stars <- " ★★"
+                else if(profile$NES < -1.0) stars <- " ★"
+            }
+            
+            txt_prompt <- c(txt_prompt,
+                sprintf("%-4s %-30s %-8s %-10s %-8s %-6s%s", 
+                       paste0("#", i), substr(drug_name, 1, 30), nes_str, fdr_str, bbb_str, phase_str, stars)
+            )
+        }
+        
+        txt_prompt <- c(txt_prompt,
+            paste0(rep("=", 79), collapse=""),
+            "",
+            "Legend: ★★★ = Exceptional (NES<-1.5, BBB≥0.5) | ★★ = Very Good | ★ = Good",
+            ""
+        )
+    }
+    
     # PPI HUB GENES
     if(!is.null(summ$hub_genes)) {
         txt_prompt <- c(txt_prompt,
@@ -1296,6 +1376,18 @@ for(cid in names(llm_summary)) {
             "",
             paste0("Total candidates identified: ", length(summ$drug_profiles)),
             "Ranking: Sorted by NES (most negative = strongest opposition to disease)",
+            "",
+            "KEY METRICS:",
+            "  • NES (Normalized Enrichment Score): Measures how well drug signature opposes disease",
+            "    - MORE NEGATIVE = BETTER (drug downregulates disease-upregulated genes)",
+            "    - NES < -2.0: Very strong therapeutic potential",
+            "    - NES < -1.5: Strong therapeutic potential",
+            "    - NES < -1.0: Moderate therapeutic potential",
+            "  • FDR (False Discovery Rate): Statistical significance",
+            "    - FDR < 0.05: Highly significant",
+            "    - FDR < 0.25: Significant (exploratory threshold)",
+            "",
+            paste0(rep("=", 79), collapse=""),
             ""
         )
         
@@ -1303,10 +1395,30 @@ for(cid in names(llm_summary)) {
             profile <- summ$drug_profiles[[i]]
             drug_name <- clean_drug_name(profile$drug_name)
             
+            # HEADER with rank and GSEA scores
             txt_prompt <- c(txt_prompt,
-                paste0("### DRUG ", i, ": ", drug_name, " ###"),
+                paste0("### RANK ", i, ": ", drug_name, " ###"),
                 ""
             )
+            
+            # GSEA ENRICHMENT SCORES (CRITICAL!)
+            if(!is.null(profile$NES) || !is.null(profile$p.adjust)) {
+                txt_prompt <- c(txt_prompt,
+                    "GSEA Enrichment Analysis:",
+                    paste0("  NES (Enrichment Score): ", 
+                           if(!is.null(profile$NES)) round(profile$NES, 3) else "N/A"),
+                    paste0("  FDR (Significance): ", 
+                           if(!is.null(profile$p.adjust)) formatC(profile$p.adjust, format="e", digits=2) else "N/A"),
+                    paste0("  Gene Set Size: ", 
+                           if(!is.null(profile$setSize)) profile$setSize else "N/A", " genes"),
+                    paste0("  Interpretation: ", 
+                           if(!is.null(profile$NES) && profile$NES < -1.5) "★★★ STRONG therapeutic potential" else
+                           if(!is.null(profile$NES) && profile$NES < -1.0) "★★ MODERATE therapeutic potential" else
+                           if(!is.null(profile$NES) && profile$NES < 0) "★ WEAK therapeutic potential" else
+                           "No clear therapeutic signal"),
+                    ""
+                )
+            }
             
             # ChEMBL Data
             if(!is.null(profile$chembl) && profile$chembl$source != "Unknown") {
@@ -1343,6 +1455,8 @@ for(cid in names(llm_summary)) {
                     "Blood-Brain Barrier (BBB) Penetration:",
                     paste0("  Score: ", profile$bbb$bbb_score, " (0-1 scale)"),
                     paste0("  Prediction: ", profile$bbb$bbb_prediction),
+                    paste0("  Clinical Feasibility: ",
+                           if(profile$bbb$bbb_score >= 0.5) "✓ CAN reach brain tumors" else "✗ May need enhanced delivery"),
                     "  Rationale:",
                     paste0("    ", gsub("\n", "\n    ", profile$bbb$rationale)),
                     ""
@@ -1387,6 +1501,56 @@ for(cid in names(llm_summary)) {
             }
             
             txt_prompt <- c(txt_prompt, paste0(rep("-", 79), collapse=""), "")
+        }
+        
+        # MULTI-TARGET DRUGS SECTION
+        if(!is.null(summ$multi_target_drugs) && length(summ$multi_target_drugs) > 0) {
+            txt_prompt <- c(txt_prompt,
+                "",
+                "===============================================================================",
+                "MULTI-TARGET DRUGS (POLYPHARMACOLOGY)",
+                "===============================================================================",
+                "",
+                "These drugs target MULTIPLE enriched pathways simultaneously.",
+                "Multi-target drugs often have:",
+                "  • Broader therapeutic efficacy",
+                "  • Lower resistance development", 
+                "  • Synergistic effects on disease mechanisms",
+                "",
+                paste0("Identified ", length(summ$multi_target_drugs), " multi-target drugs (≥3 pathways):"),
+                ""
+            )
+            
+            for(mt_drug in summ$multi_target_drugs) {
+                # Find this drug in comprehensive profiles for more details
+                matching_profile <- NULL
+                for(profile in summ$drug_profiles) {
+                    if(clean_drug_name(profile$drug_name) == mt_drug) {
+                        matching_profile <- profile
+                        break
+                    }
+                }
+                
+                if(!is.null(matching_profile)) {
+                    txt_prompt <- c(txt_prompt,
+                        paste0("  🎯 ", mt_drug),
+                        paste0("      NES: ", if(!is.null(matching_profile$NES)) round(matching_profile$NES, 3) else "N/A"),
+                        paste0("      FDR: ", if(!is.null(matching_profile$p.adjust)) formatC(matching_profile$p.adjust, format="e", digits=2) else "N/A"),
+                        paste0("      BBB: ", if(!is.null(matching_profile$bbb$bbb_score)) matching_profile$bbb$bbb_score else "N/A"),
+                        paste0("      Phase: ", if(!is.null(matching_profile$chembl$max_phase)) matching_profile$chembl$max_phase else "N/A"),
+                        ""
+                    )
+                } else {
+                    txt_prompt <- c(txt_prompt, paste0("  🎯 ", mt_drug), "")
+                }
+            }
+            
+            txt_prompt <- c(txt_prompt,
+                "RECOMMENDATION: Prioritize multi-target drugs for experimental validation.",
+                "Their ability to modulate multiple pathways may provide superior efficacy",
+                "compared to single-target drugs.",
+                ""
+            )
         }
     }
     
