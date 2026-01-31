@@ -140,6 +140,11 @@ RUN R -e "install.packages('optparse', repos='http://cran.rstudio.com/')"
 # # ------------------------------------------------------------------------------
 RUN R -e "install.packages('clinfun', repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# # LAYER 18: Ridgeplots (Ultimate GSEA v5 Requirement)
+# # ------------------------------------------------------------------------------
+RUN R -e "install.packages('ggridges', repos='http://cran.rstudio.com/')"
+
 
 WORKDIR /data
 
