@@ -165,4 +165,9 @@ RUN R -e "BiocManager::install('ReactomePA')"
 # # ------------------------------------------------------------------------------
 RUN R -e "install.packages('xml2', repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# # LAYER 23: New Additions (v2026 Update)
+# # ------------------------------------------------------------------------------
+RUN R -e "install.packages(c('ggpubr', 'rstatix', 'UpSetR'), repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
