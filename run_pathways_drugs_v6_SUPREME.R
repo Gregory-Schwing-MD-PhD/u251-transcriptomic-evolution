@@ -188,22 +188,22 @@ query_chembl <- function(drug_name, use_cache = TRUE) {
 
 get_chembl_fallback <- function(drug_name) {
     drug_upper <- toupper(gsub("-.*", "", drug_name))
-    
+
     fallback_db <- list(
-        "DOXORUBICIN" = list(chembl_id = "CHEMBL53463", max_phase = 4, molecular_weight = 543.52, 
-                            alogp = 1.27, psa = 206.07, ro5_violations = 2, source = "Internal DB"),
-        "METFORMIN" = list(chembl_id = "CHEMBL1431", max_phase = 4, molecular_weight = 129.16, 
-                          alogp = -1.43, psa = 88.99, ro5_violations = 0, source = "Internal DB"),
-        "PACLITAXEL" = list(chembl_id = "CHEMBL428", max_phase = 4, molecular_weight = 853.91, 
-                           alogp = 3.96, psa = 221.29, ro5_violations = 3, source = "Internal DB"),
-        "TEMOZOLOMIDE" = list(chembl_id = "CHEMBL810", max_phase = 4, molecular_weight = 194.15, 
-                             alogp = -0.85, psa = 106.59, ro5_violations = 0, source = "Internal DB"),
-        "BEVACIZUMAB" = list(chembl_id = "CHEMBL1201583", max_phase = 4, molecular_weight = 149000, 
-                            alogp = NA, psa = NA, ro5_violations = NA, source = "Internal DB"),
-        "CARMUSTINE" = list(chembl_id = "CHEMBL513", max_phase = 4, molecular_weight = 214.05, 
-                           alogp = 1.53, psa = 70.59, ro5_violations = 0, source = "Internal DB"),
-        "LOMUSTINE" = list(chembl_id = "CHEMBL792", max_phase = 4, molecular_weight = 233.70, 
-                          alogp = 2.29, psa = 70.59, ro5_violations = 0, source = "Internal DB")
+        "DOXORUBICIN" = list(chembl_id = "CHEMBL53463", max_phase = 4, molecular_weight = 543.52,
+                             alogp = 1.27, psa = 206.07, ro5_violations = 2, source = "Internal DB"),
+        "METFORMIN" = list(chembl_id = "CHEMBL1431", max_phase = 4, molecular_weight = 129.16,
+                           alogp = -1.43, psa = 88.99, ro5_violations = 0, source = "Internal DB"),
+        "PACLITAXEL" = list(chembl_id = "CHEMBL428", max_phase = 4, molecular_weight = 853.91,
+                            alogp = 3.96, psa = 221.29, ro5_violations = 3, source = "Internal DB"),
+        "TEMOZOLOMIDE" = list(chembl_id = "CHEMBL810", max_phase = 4, molecular_weight = 194.15,
+                              alogp = -0.85, psa = 106.59, ro5_violations = 0, source = "Internal DB"),
+        "BEVACIZUMAB" = list(chembl_id = "CHEMBL1201583", max_phase = 4, molecular_weight = 149000,
+                             alogp = NA, psa = NA, ro5_violations = NA, source = "Internal DB"),
+        "CARMUSTINE" = list(chembl_id = "CHEMBL513", max_phase = 4, molecular_weight = 214.05,
+                            alogp = 1.53, psa = 70.59, ro5_violations = 0, source = "Internal DB"),
+        "LOMUSTINE" = list(chembl_id = "CHEMBL792", max_phase = 4, molecular_weight = 233.70,
+                           alogp = 2.29, psa = 70.59, ro5_violations = 0, source = "Internal DB")
     )
 
     if(drug_upper %in% names(fallback_db)) {
@@ -243,12 +243,12 @@ query_pubchem <- function(drug_name, use_cache = TRUE) {
                 cid <- content$IdentifierList$CID[1]
 
                 # Get 2D structure image URL
-                image_2d_url <- paste0("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/", 
-                                      cid, "/PNG")
+                image_2d_url <- paste0("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/",
+                                       cid, "/PNG")
 
                 # Get properties
-                prop_url <- paste0(PUBCHEM_BASE_URL, "/compound/cid/", cid, 
-                                  "/property/MolecularFormula,MolecularWeight,CanonicalSMILES,IsomericSMILES/JSON")
+                prop_url <- paste0(PUBCHEM_BASE_URL, "/compound/cid/", cid,
+                                   "/property/MolecularFormula,MolecularWeight,CanonicalSMILES,IsomericSMILES/JSON")
                 prop_response <- GET(prop_url, timeout(10))
 
                 properties <- NULL
@@ -262,8 +262,8 @@ query_pubchem <- function(drug_name, use_cache = TRUE) {
                 pubchem_info <- list(
                     cid = cid,
                     image_2d_url = image_2d_url,
-                    image_3d_url = paste0("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/", 
-                                         cid, "/record/SDF/?record_type=3d"),
+                    image_3d_url = paste0("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/",
+                                          cid, "/record/SDF/?record_type=3d"),
                     molecular_formula = if(!is.null(properties)) properties$MolecularFormula else NA,
                     molecular_weight = if(!is.null(properties)) properties$MolecularWeight else NA,
                     smiles = if(!is.null(properties)) properties$CanonicalSMILES else NA,
@@ -305,8 +305,8 @@ query_clinical_trials <- function(drug_name, condition = "brain cancer", use_cac
 
         # ClinicalTrials.gov API v2
         url <- paste0("https://clinicaltrials.gov/api/v2/studies?query.term=",
-                     URLencode(search_name), "%20AND%20", URLencode(condition),
-                     "&countTotal=true&pageSize=10")
+                      URLencode(search_name), "%20AND%20", URLencode(condition),
+                      "&countTotal=true&pageSize=10")
 
         response <- GET(url, timeout(15))
 
@@ -352,7 +352,7 @@ query_clinical_trials <- function(drug_name, condition = "brain cancer", use_cac
 
 get_clinical_trials_fallback <- function(drug_name, condition) {
     drug_upper <- toupper(gsub("-.*", "", drug_name))
-    
+
     # Fallback database for common brain cancer drugs
     fallback_db <- list(
         "TEMOZOLOMIDE" = list(total_trials = 450, active_trials = 89, source = "Internal DB"),
@@ -376,7 +376,7 @@ get_clinical_trials_fallback <- function(drug_name, condition) {
 predict_bbb_penetration <- function(chembl_data) {
     # BBB penetration prediction based on molecular properties
     # Based on: CNS MPO (Central Nervous System Multiparameter Optimization)
-    
+
     if(is.null(chembl_data) || chembl_data$source == "Unknown") {
         return(list(bbb_score = NA, bbb_prediction = "Unknown", rationale = "No molecular data"))
     }
@@ -474,22 +474,22 @@ predict_bbb_penetration <- function(chembl_data) {
 check_drug_interactions <- function(drug_list) {
     # Known drug-drug interactions for common cancer drugs
     # In production, query DrugBank DDI API
-    
+
     interaction_db <- list(
         # EGFR inhibitors + Warfarin = bleeding risk
-        c("ERLOTINIB", "WARFARIN") = list(severity = "HIGH", effect = "Increased bleeding risk"),
-        c("GEFITINIB", "WARFARIN") = list(severity = "HIGH", effect = "Increased bleeding risk"),
-        
+        "ERLOTINIB+WARFARIN" = list(severity = "HIGH", effect = "Increased bleeding risk"),
+        "GEFITINIB+WARFARIN" = list(severity = "HIGH", effect = "Increased bleeding risk"),
+
         # Temozolomide + Valproic Acid = enhanced myelosuppression
-        c("TEMOZOLOMIDE", "VALPROIC") = list(severity = "MODERATE", effect = "Enhanced myelosuppression"),
-        
+        "TEMOZOLOMIDE+VALPROIC" = list(severity = "MODERATE", effect = "Enhanced myelosuppression"),
+
         # Bevacizumab + NSAIDs = bleeding
-        c("BEVACIZUMAB", "IBUPROFEN") = list(severity = "MODERATE", effect = "Increased bleeding risk"),
-        c("BEVACIZUMAB", "ASPIRIN") = list(severity = "MODERATE", effect = "Increased bleeding risk"),
-        
+        "BEVACIZUMAB+IBUPROFEN" = list(severity = "MODERATE", effect = "Increased bleeding risk"),
+        "BEVACIZUMAB+ASPIRIN" = list(severity = "MODERATE", effect = "Increased bleeding risk"),
+
         # CYP3A4 interactions
-        c("DOXORUBICIN", "KETOCONAZOLE") = list(severity = "HIGH", effect = "Increased doxorubicin toxicity"),
-        c("PACLITAXEL", "KETOCONAZOLE") = list(severity = "HIGH", effect = "Increased paclitaxel toxicity")
+        "DOXORUBICIN+KETOCONAZOLE" = list(severity = "HIGH", effect = "Increased doxorubicin toxicity"),
+        "PACLITAXEL+KETOCONAZOLE" = list(severity = "HIGH", effect = "Increased paclitaxel toxicity")
     )
 
     interactions <- list()
@@ -502,16 +502,14 @@ check_drug_interactions <- function(drug_list) {
             drug2 <- toupper(gsub("-.*", "", drug_list[j]))
 
             # Check both orderings
-            key1 <- c(drug1, drug2)
-            key2 <- c(drug2, drug1)
+            key1 <- paste(drug1, drug2, sep="+")
+            key2 <- paste(drug2, drug1, sep="+")
 
-            for(key in list(key1, key2)) {
-                for(known_pair in names(interaction_db)) {
-                    known <- eval(parse(text = known_pair))
-                    if(all(key == known)) {
-                        interactions[[paste(drug1, drug2, sep = " + ")]] <- interaction_db[[known_pair]]
-                    }
-                }
+            if(key1 %in% names(interaction_db)) {
+                 interactions[[paste(drug1, drug2, sep = " + ")]] <- interaction_db[[key1]]
+            }
+            if(key2 %in% names(interaction_db)) {
+                 interactions[[paste(drug1, drug2, sep = " + ")]] <- interaction_db[[key2]]
             }
         }
     }
@@ -526,34 +524,34 @@ check_drug_interactions <- function(drug_list) {
 detect_synthetic_lethality <- function(drug_targets, pathway_genes, pathway_name) {
     # Synthetic lethality: drug targets gene A, pathway contains gene B,
     # simultaneous loss of A+B is lethal to cancer cells
-    
+
     # Known synthetic lethal pairs (from literature)
     synleth_db <- list(
         # PARP inhibitors + BRCA deficiency
-        c("PARP1", "BRCA1") = "PARP inhibitor synthetic lethal with BRCA1 deficiency",
-        c("PARP1", "BRCA2") = "PARP inhibitor synthetic lethal with BRCA2 deficiency",
-        
+        "PARP1+BRCA1" = "PARP inhibitor synthetic lethal with BRCA1 deficiency",
+        "PARP1+BRCA2" = "PARP inhibitor synthetic lethal with BRCA2 deficiency",
+
         # ATR inhibitors + ATM deficiency
-        c("ATR", "ATM") = "ATR inhibitor synthetic lethal with ATM deficiency",
-        
+        "ATR+ATM" = "ATR inhibitor synthetic lethal with ATM deficiency",
+
         # WEE1 inhibitors + TP53 deficiency
-        c("WEE1", "TP53") = "WEE1 inhibitor synthetic lethal with TP53 mutations (common in GBM)",
-        
+        "WEE1+TP53" = "WEE1 inhibitor synthetic lethal with TP53 mutations (common in GBM)",
+
         # PKMYT1 + TP53
-        c("PKMYT1", "TP53") = "PKMYT1 inhibitor synthetic lethal with TP53 loss",
-        
+        "PKMYT1+TP53" = "PKMYT1 inhibitor synthetic lethal with TP53 loss",
+
         # CHK1 + TP53
-        c("CHEK1", "TP53") = "CHK1 inhibitor synthetic lethal with TP53 mutations",
-        
+        "CHEK1+TP53" = "CHK1 inhibitor synthetic lethal with TP53 mutations",
+
         # EGFR + PTEN (common in GBM)
-        c("EGFR", "PTEN") = "EGFR inhibitor + PTEN loss = enhanced sensitivity",
-        
+        "EGFR+PTEN" = "EGFR inhibitor + PTEN loss = enhanced sensitivity",
+
         # PI3K/mTOR + PTEN
-        c("MTOR", "PTEN") = "mTOR inhibitor synthetic lethal with PTEN deficiency",
-        c("PIK3CA", "PTEN") = "PI3K inhibitor synthetic lethal with PTEN loss",
-        
+        "MTOR+PTEN" = "mTOR inhibitor synthetic lethal with PTEN deficiency",
+        "PIK3CA+PTEN" = "PI3K inhibitor synthetic lethal with PTEN loss",
+
         # MET + EGFR
-        c("MET", "EGFR") = "MET inhibitor overcomes EGFR inhibitor resistance"
+        "MET+EGFR" = "MET inhibitor overcomes EGFR inhibitor resistance"
     )
 
     synleth_hits <- list()
@@ -565,22 +563,26 @@ detect_synthetic_lethality <- function(drug_targets, pathway_genes, pathway_name
     for(target in drug_targets) {
         for(pathway_gene in pathway_genes) {
             # Check both orderings
-            key1 <- c(target, pathway_gene)
-            key2 <- c(pathway_gene, target)
+            key1 <- paste(target, pathway_gene, sep="+")
+            key2 <- paste(pathway_gene, target, sep="+")
 
-            for(key in list(key1, key2)) {
-                for(known_pair in names(synleth_db)) {
-                    known <- eval(parse(text = known_pair))
-                    if(all(key == known)) {
-                        synleth_hits[[paste(target, pathway_gene, sep = " + ")]] <- list(
-                            target = target,
-                            pathway_gene = pathway_gene,
-                            pathway = pathway_name,
-                            mechanism = synleth_db[[known_pair]],
-                            score = 0.9  # High confidence for known pairs
-                        )
-                    }
-                }
+            if(key1 %in% names(synleth_db)) {
+                synleth_hits[[paste(target, pathway_gene, sep = " + ")]] <- list(
+                    target = target,
+                    pathway_gene = pathway_gene,
+                    pathway = pathway_name,
+                    mechanism = synleth_db[[key1]],
+                    score = 0.9  # High confidence for known pairs
+                )
+            }
+            if(key2 %in% names(synleth_db)) {
+                synleth_hits[[paste(target, pathway_gene, sep = " + ")]] <- list(
+                    target = target,
+                    pathway_gene = pathway_gene,
+                    pathway = pathway_name,
+                    mechanism = synleth_db[[key2]],
+                    score = 0.9  # High confidence for known pairs
+                )
             }
         }
     }
@@ -610,8 +612,8 @@ predict_admet <- function(chembl_data) {
     if(ro5_pass) {
         admet$absorption <- "GOOD - Passes Lipinski's Rule of 5"
     } else {
-        admet$absorption <- sprintf("POOR - %d Lipinski violations", 
-                                   if(!is.na(chembl_data$ro5_violations)) chembl_data$ro5_violations else NA)
+        admet$absorption <- sprintf("POOR - %d Lipinski violations",
+                                    if(!is.na(chembl_data$ro5_violations)) chembl_data$ro5_violations else NA)
     }
 
     # DISTRIBUTION (based on LogP and PSA)
@@ -753,7 +755,7 @@ create_drug_pathway_heatmap <- function(pathway_results, drug_results, out_prefi
         ht <- Heatmap(overlap_mat,
                       name = "Shared\nGenes",
                       col = colorRamp2(c(0, max(overlap_mat)/2, max(overlap_mat)),
-                                     c("white", "#fee090", "#d73027")),
+                                       c("white", "#fee090", "#d73027")),
                       cluster_rows = TRUE,
                       cluster_columns = TRUE,
                       show_row_names = TRUE,
@@ -789,7 +791,7 @@ create_drug_profile_report <- function(drug_profiles, out_prefix, contrast) {
     tryCatch({
         # Prepare data for visualization
         profile_df <- data.frame()
-        
+
         for(profile in drug_profiles) {
             bbb_score <- if(!is.null(profile$bbb$bbb_score) && !is.na(profile$bbb$bbb_score)) {
                 profile$bbb$bbb_score
@@ -825,7 +827,7 @@ create_drug_profile_report <- function(drug_profiles, out_prefix, contrast) {
             geom_bar(stat = "identity", fill = "#3498db", alpha = 0.8) +
             geom_hline(yintercept = BBB_SCORE_THRESHOLD, linetype = "dashed", color = "red", linewidth = 1) +
             coord_flip() +
-            labs(title = "BBB Penetration Scores", 
+            labs(title = "BBB Penetration Scores",
                  subtitle = paste0("Red line = threshold (", BBB_SCORE_THRESHOLD, ")"),
                  x = "Drug", y = "BBB Penetration Score (0-1)") +
             theme_minimal(base_size = 12) +
@@ -834,7 +836,7 @@ create_drug_profile_report <- function(drug_profiles, out_prefix, contrast) {
         p2 <- ggplot(profile_df, aes(x = reorder(Drug, Clinical_Trials), y = Clinical_Trials)) +
             geom_bar(stat = "identity", fill = "#27ae60", alpha = 0.8) +
             coord_flip() +
-            labs(title = "Clinical Trial Activity", 
+            labs(title = "Clinical Trial Activity",
                  subtitle = "Total trials for brain cancer",
                  x = "Drug", y = "Number of Trials") +
             theme_minimal(base_size = 12) +
@@ -843,23 +845,23 @@ create_drug_profile_report <- function(drug_profiles, out_prefix, contrast) {
         p3 <- ggplot(profile_df, aes(x = reorder(Drug, SynLeth_Hits), y = SynLeth_Hits)) +
             geom_bar(stat = "identity", fill = "#e74c3c", alpha = 0.8) +
             coord_flip() +
-            labs(title = "Synthetic Lethality Opportunities", 
+            labs(title = "Synthetic Lethality Opportunities",
                  subtitle = "Known synthetic lethal interactions",
                  x = "Drug", y = "Number of SynLeth Pairs") +
             theme_minimal(base_size = 12) +
             theme(plot.title = element_text(face = "bold"))
 
         library(patchwork)
-        combined <- p1 / p2 / p3 + 
+        combined <- p1 / p2 / p3 +
             plot_annotation(
                 title = paste0("Comprehensive Drug Profiling: ", contrast),
                 subtitle = "BBB Penetration | Clinical Evidence | Synthetic Lethality",
                 theme = theme(plot.title = element_text(size = 18, face = "bold"))
             )
 
-        ggsave(paste0(out_prefix, "_", contrast, "_DrugProfile_Report_mqc.pdf"), combined, 
+        ggsave(paste0(out_prefix, "_", contrast, "_DrugProfile_Report_mqc.pdf"), combined,
                width=14, height=16)
-        ggsave(paste0(out_prefix, "_", contrast, "_DrugProfile_Report_mqc.png"), combined, 
+        ggsave(paste0(out_prefix, "_", contrast, "_DrugProfile_Report_mqc.png"), combined,
                width=14, height=16, dpi=300, bg="white")
 
         return(profile_df)
@@ -923,8 +925,8 @@ create_polypharm_network <- function(drug_results, pathway_results, out_prefix, 
             scale_size_manual(values = c("Drug" = 6, "Pathway" = 4)) +
             scale_shape_manual(values = c("Multi-target" = 17, "Single" = 16)) +
             geom_node_text(aes(label = name, fontface = ifelse(multi_target, "bold", "plain")),
-                          repel = TRUE, size = 3, max.overlaps = 50, 
-                          bg.color = "white", bg.r = 0.1) +
+                           repel = TRUE, size = 3, max.overlaps = 50,
+                           bg.color = "white", bg.r = 0.1) +
             theme_void() +
             labs(title = paste0("Polypharmacology Network: ", contrast),
                  subtitle = "Triangles = Multi-target drugs (≥3 pathways) | All nodes labeled") +
@@ -1089,7 +1091,7 @@ add_drug_profile_section <- function(drug_profiles) {
                 "<div class='section-header bbb-header' style='margin-top:15px;'>🧠 BBB Penetration</div>",
                 "<p><strong>Score:</strong> <span class='", bbb_class, "'>", round(profile$bbb$bbb_score, 3), "</span></p>",
                 "<p><strong>Prediction:</strong> ", profile$bbb$bbb_prediction, "</p>",
-                "<p><strong>Rationale:</strong><br><pre style='background:#f8f9fa; padding:10px; border-radius:5px; font-size:11px;'>", 
+                "<p><strong>Rationale:</strong><br><pre style='background:#f8f9fa; padding:10px; border-radius:5px; font-size:11px;'>",
                 profile$bbb$rationale, "</pre></p>"
             )
         }
@@ -1145,14 +1147,14 @@ add_interpretation_guide <- function(plot_type) {
             <h4>📈 How to Interpret Dotplot</h4>
             <p><strong>What it shows:</strong> Top enriched pathways ranked by statistical significance</p>
         </div>",
-        
+
         emap = "
         <div class='interpretation-box'>
             <h4>🕸️ How to Interpret Enrichment Map</h4>
             <p><strong>What it shows:</strong> Relationships between enriched pathways based on shared genes</p>
         </div>"
     )
-    
+
     if(plot_type %in% names(guides)) {
         html_buffer <<- c(html_buffer, guides[[plot_type]])
     }
@@ -1258,7 +1260,7 @@ init_cache()
 init_html()
 
 cat("╔════════════════════════════════════════════════════════════════╗\n")
-cat("║          BRAIN CANCER DRUG DISCOVERY SUITE v7 ULTIMATE        ║\n")
+cat("║          BRAIN CANCER DRUG DISCOVERY SUITE v7 ULTIMATE         ║\n")
 cat("╚════════════════════════════════════════════════════════════════╝\n\n")
 
 cat("LOG: Loading STRING...\n")
@@ -1373,7 +1375,7 @@ for(f in contrasts) {
             if(nrow(gsea_out) >= 5) {
                 add_interpretation_guide("emap")
                 p_emap <- emapplot(gsea_out, showCategory=GSEA_EMAP_N,
-                                 cex.params=list(category_label=0.6)) +
+                                  cex.params=list(category_label=0.6)) +
                           ggtitle(paste0(db_name, ": ", cid))
                 save_mqc(p_emap, paste0(out_prefix, "_", cid, "_GSEA_Emap_", db_name), 12, 10)
             }
@@ -1514,7 +1516,7 @@ for(f in contrasts) {
 finish_html(out_prefix)
 
 cat("\n╔═══════════════════════════════════════════════════════════════╗\n")
-cat("║         ULTIMATE EDITION v7 ANALYSIS COMPLETE                ║\n")
+cat("║          ULTIMATE EDITION v7 ANALYSIS COMPLETE                ║\n")
 cat("╚═══════════════════════════════════════════════════════════════╝\n\n")
 cat("✅ Generated Files:\n")
 cat(sprintf("   • HTML Report: %s/Analysis_Narrative_mqc.html\n", dirname(out_prefix)))
