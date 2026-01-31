@@ -145,6 +145,15 @@ RUN R -e "install.packages('clinfun', repos='http://cran.rstudio.com/')"
 # # ------------------------------------------------------------------------------
 RUN R -e "install.packages('ggridges', repos='http://cran.rstudio.com/')"
 
+# LAYER 19: Database queries
+RUN R -e "install.packages(c('httr', 'jsonlite'), repos='http://cran.rstudio.com/')"
+#
+# # LAYER 20: KEGG visualization
+RUN R -e "BiocManager::install('pathview')"
+#
+# # LAYER 21: Reactome integration
+RUN R -e "BiocManager::install('ReactomePA')"
+
 
 WORKDIR /data
 
