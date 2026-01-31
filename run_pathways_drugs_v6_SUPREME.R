@@ -64,20 +64,20 @@ EXPORT_TOP_N <- 50
 # Query WikiPathways for pathway information
 query_wikipathways <- function(pathway_name) {
     if(!HAS_HTTR || !HAS_JSONLITE) return(NULL)
-    
+
     tryCatch({
         library(httr)
         library(jsonlite)
-        
+
         # Clean pathway name
         query <- gsub("_", " ", pathway_name)
         query <- gsub("HALLMARK ", "", query)
         query <- gsub("REACTOME ", "", query)
         query <- gsub("KEGG ", "", query)
-        
+
         url <- paste0("https://webservice.wikipathways.org/findPathwaysByText?query=",
-                     URLencode(query), "&species=Homo sapiens&format=json")
-        
+                      URLencode(query), "&species=Homo sapiens&format=json")
+
         response <- GET(url, timeout(5))
         if(status_code(response) == 200) {
             content <- fromJSON(content(response, "text"))
@@ -97,34 +97,34 @@ query_wikipathways <- function(pathway_name) {
 # Query Reactome for pathway details
 query_reactome <- function(pathway_name) {
     if(!HAS_HTTR || !HAS_JSONLITE) return(NULL)
-    
+
     tryCatch({
         library(httr)
         library(jsonlite)
-        
+
         query <- gsub("_", " ", pathway_name)
         query <- gsub("REACTOME ", "", query)
         query <- gsub("HALLMARK ", "", query)
-        
+
         url <- paste0("https://reactome.org/ContentService/search/query?query=",
-                     URLencode(query), "&species=Homo sapiens&types=Pathway")
-        
+                      URLencode(query), "&species=Homo sapiens&types=Pathway")
+
         response <- GET(url, timeout(5))
         if(status_code(response) == 200) {
             content <- fromJSON(content(response, "text"))
             if(!is.null(content$results) && length(content$results) > 0) {
-                desc <- if(!is.null(content$results[[1]]$summation) && 
-                          length(content$results[[1]]$summation) > 0) {
+                desc <- if(!is.null(content$results[[1]]$summation) &&
+                           length(content$results[[1]]$summation) > 0) {
                     content$results[[1]]$summation[[1]]$text
                 } else {
                     "Description not available"
                 }
-                
+
                 return(list(
                     name = content$results[[1]]$name,
                     id = content$results[[1]]$stId,
-                    url = paste0("https://reactome.org/content/detail/", 
-                               content$results[[1]]$stId),
+                    url = paste0("https://reactome.org/content/detail/",
+                                 content$results[[1]]$stId),
                     description = substr(desc, 1, 200),
                     source = "Reactome"
                 ))
@@ -154,23 +154,23 @@ extract_drug_moa <- function(drug_name) {
         "VENETOCLAX" = "BCL-2 inhibition → Mitochondrial permeabilization → Apoptosis",
         "TRAMETINIB" = "MEK1/2 inhibition → ↓MAPK signaling → Growth arrest"
     )
-    
+
     # Clean drug name and try to match
     drug_upper <- toupper(gsub("-.*", "", drug_name))
     drug_upper <- gsub("_.*", "", drug_upper)
-    
+
     # Try exact match
     if(drug_upper %in% names(moa_db)) {
         return(moa_db[[drug_upper]])
     }
-    
+
     # Try partial match
     for(known_drug in names(moa_db)) {
         if(grepl(known_drug, drug_upper) || grepl(drug_upper, known_drug)) {
             return(moa_db[[known_drug]])
         }
     }
-    
+
     return("Mechanism not in database")
 }
 
@@ -182,7 +182,7 @@ extract_drug_moa <- function(drug_name) {
 create_drug_pathway_heatmap <- function(pathway_results, drug_results, out_prefix, contrast) {
     if(is.null(pathway_results) || is.null(drug_results)) return(NULL)
     if(nrow(pathway_results) == 0 || nrow(drug_results) == 0) return(NULL)
-    
+
     tryCatch({
         # Get top pathways and drugs
         top_pathways <- pathway_results %>%
@@ -190,65 +190,65 @@ create_drug_pathway_heatmap <- function(pathway_results, drug_results, out_prefi
             arrange(p.adjust) %>%
             head(DRUG_PATHWAY_TOP_N) %>%
             pull(ID)
-        
+
         top_drugs <- drug_results %>%
             filter(NES < 0, p.adjust < 0.25) %>%
             arrange(NES) %>%
             head(DRUG_PATHWAY_TOP_N) %>%
             pull(ID)
-        
+
         if(length(top_pathways) == 0 || length(top_drugs) == 0) return(NULL)
-        
+
         # Create overlap matrix based on shared genes
         overlap_mat <- matrix(0, nrow=length(top_drugs), ncol=length(top_pathways),
                             dimnames=list(top_drugs, top_pathways))
-        
+
         for(i in seq_along(top_drugs)) {
             drug_genes <- unlist(strsplit(
                 drug_results$core_enrichment[drug_results$ID == top_drugs[i]], "/"))
-            
+
             for(j in seq_along(top_pathways)) {
                 pathway_genes <- unlist(strsplit(
                     pathway_results$core_enrichment[pathway_results$ID == top_pathways[j]], "/"))
-                
+
                 overlap <- length(intersect(drug_genes, pathway_genes))
                 overlap_mat[i, j] <- overlap
             }
         }
-        
+
         # Create heatmap
         library(ComplexHeatmap)
         library(circlize)
-        
+
         # Truncate labels
         rownames(overlap_mat) <- substr(rownames(overlap_mat), 1, 40)
         colnames(overlap_mat) <- substr(colnames(overlap_mat), 1, 40)
-        
+
         ht <- Heatmap(overlap_mat,
-                     name = "Shared\nGenes",
-                     col = colorRamp2(c(0, max(overlap_mat)/2, max(overlap_mat)), 
+                      name = "Shared\nGenes",
+                      col = colorRamp2(c(0, max(overlap_mat)/2, max(overlap_mat)),
                                      c("white", "#fee090", "#d73027")),
-                     cluster_rows = TRUE,
-                     cluster_columns = TRUE,
-                     show_row_names = TRUE,
-                     show_column_names = TRUE,
-                     row_names_gp = gpar(fontsize = 9),
-                     column_names_gp = gpar(fontsize = 9),
-                     column_names_rot = 45,
-                     heatmap_legend_param = list(title = "Shared\nGenes"),
-                     column_title = paste0("Drug-Pathway Overlap: ", contrast),
-                     width = unit(12, "cm"),
-                     height = unit(10, "cm"))
-        
+                      cluster_rows = TRUE,
+                      cluster_columns = TRUE,
+                      show_row_names = TRUE,
+                      show_column_names = TRUE,
+                      row_names_gp = gpar(fontsize = 9),
+                      column_names_gp = gpar(fontsize = 9),
+                      column_names_rot = 45,
+                      heatmap_legend_param = list(title = "Shared\nGenes"),
+                      column_title = paste0("Drug-Pathway Overlap: ", contrast),
+                      width = unit(12, "cm"),
+                      height = unit(10, "cm"))
+
         pdf(paste0(out_prefix, "_", contrast, "_DrugPathway_Heatmap_mqc.pdf"), width=16, height=14)
         draw(ht)
         dev.off()
-        
-        png(paste0(out_prefix, "_", contrast, "_DrugPathway_Heatmap_mqc.png"), 
+
+        png(paste0(out_prefix, "_", contrast, "_DrugPathway_Heatmap_mqc.png"),
             width=16, height=14, units="in", res=300, bg="white")
         draw(ht)
         dev.off()
-        
+
         return(overlap_mat)
     }, error = function(e) {
         cat("ERROR creating drug-pathway heatmap:", e$message, "\n")
@@ -259,16 +259,16 @@ create_drug_pathway_heatmap <- function(pathway_results, drug_results, out_prefi
 # Create MOA diagram for top drugs
 create_moa_diagram <- function(drug_results, out_prefix, contrast) {
     if(is.null(drug_results) || nrow(drug_results) == 0) return(NULL)
-    
+
     tryCatch({
         # Get top therapeutic candidates
         top_drugs <- drug_results %>%
             filter(NES < 0, p.adjust < 0.25) %>%
             arrange(NES) %>%
             head(MOA_TOP_DRUGS)
-        
+
         if(nrow(top_drugs) == 0) return(NULL)
-        
+
         # Extract MOA for each drug
         moa_data <- top_drugs %>%
             mutate(
@@ -278,9 +278,9 @@ create_moa_diagram <- function(drug_results, out_prefix, contrast) {
             ) %>%
             filter(HasMOA) %>%
             select(Drug, MOA, NES, p.adjust)
-        
+
         if(nrow(moa_data) == 0) return(NULL)
-        
+
         # Create text-based MOA diagram
         p <- ggplot(moa_data, aes(x = reorder(Drug, NES), y = NES, fill = p.adjust)) +
             geom_bar(stat = "identity") +
@@ -295,10 +295,10 @@ create_moa_diagram <- function(drug_results, out_prefix, contrast) {
                 plot.subtitle = element_text(size = 12, color = "grey40"),
                 legend.position = "right"
             )
-        
+
         ggsave(paste0(out_prefix, "_", contrast, "_Drug_MOA_mqc.pdf"), p, width=14, height=10)
         ggsave(paste0(out_prefix, "_", contrast, "_Drug_MOA_mqc.png"), p, width=14, height=10, dpi=300, bg="white")
-        
+
         return(moa_data)
     }, error = function(e) {
         cat("ERROR creating MOA diagram:", e$message, "\n")
@@ -310,30 +310,30 @@ create_moa_diagram <- function(drug_results, out_prefix, contrast) {
 create_polypharm_network <- function(drug_results, pathway_results, out_prefix, contrast) {
     if(is.null(drug_results) || is.null(pathway_results)) return(NULL)
     if(nrow(drug_results) == 0 || nrow(pathway_results) == 0) return(NULL)
-    
+
     tryCatch({
         # Get drugs and pathways
         drugs <- drug_results %>%
             filter(NES < 0, p.adjust < 0.25) %>%
             head(15) %>%
             mutate(Drug = substr(ID, 1, 30))
-        
+
         pathways <- pathway_results %>%
             filter(p.adjust < 0.05) %>%
             head(15) %>%
             mutate(Pathway = substr(ID, 1, 30))
-        
+
         if(nrow(drugs) == 0 || nrow(pathways) == 0) return(NULL)
-        
+
         # Build network edges
         edges <- data.frame()
         for(i in 1:nrow(drugs)) {
             drug_genes <- unlist(strsplit(drugs$core_enrichment[i], "/"))
-            
+
             for(j in 1:nrow(pathways)) {
                 pathway_genes <- unlist(strsplit(pathways$core_enrichment[j], "/"))
                 overlap <- length(intersect(drug_genes, pathway_genes))
-                
+
                 if(overlap >= 3) {  # At least 3 shared genes
                     edges <- rbind(edges, data.frame(
                         from = drugs$Drug[i],
@@ -343,28 +343,28 @@ create_polypharm_network <- function(drug_results, pathway_results, out_prefix, 
                 }
             }
         }
-        
+
         if(nrow(edges) == 0) return(NULL)
-        
+
         # Create network
         g <- graph_from_data_frame(edges, directed = FALSE)
-        
+
         # Identify multi-target drugs
         drug_degree <- degree(g, v = V(g)[V(g)$name %in% drugs$Drug])
         multi_target <- names(drug_degree[drug_degree >= 3])
-        
+
         V(g)$type <- ifelse(V(g)$name %in% drugs$Drug, "Drug", "Pathway")
         V(g)$multi_target <- V(g)$name %in% multi_target
-        
+
         p <- ggraph(g, layout = "fr") +
             geom_edge_link(aes(width = weight), alpha = 0.3, color = "grey60") +
             scale_edge_width(range = c(0.5, 3)) +
-            geom_node_point(aes(color = type, size = type, 
+            geom_node_point(aes(color = type, size = type,
                               shape = ifelse(multi_target & type == "Drug", "Multi-target", "Single"))) +
             scale_color_manual(values = c("Drug" = "#e74c3c", "Pathway" = "#3498db")) +
             scale_size_manual(values = c("Drug" = 6, "Pathway" = 4)) +
             scale_shape_manual(values = c("Multi-target" = 17, "Single" = 16)) +
-            geom_node_text(aes(label = ifelse(multi_target, name, "")), 
+            geom_node_text(aes(label = ifelse(multi_target, name, "")),
                           repel = TRUE, size = 3, fontface = "bold") +
             theme_void() +
             labs(title = paste0("Polypharmacology Network: ", contrast),
@@ -372,10 +372,10 @@ create_polypharm_network <- function(drug_results, pathway_results, out_prefix, 
             theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
                   plot.subtitle = element_text(size = 12, hjust = 0.5),
                   legend.position = "right")
-        
+
         ggsave(paste0(out_prefix, "_", contrast, "_Polypharm_Network_mqc.pdf"), p, width=14, height=12)
         ggsave(paste0(out_prefix, "_", contrast, "_Polypharm_Network_mqc.png"), p, width=14, height=12, dpi=300, bg="white")
-        
+
         return(multi_target)
     }, error = function(e) {
         cat("ERROR creating polypharmacology network:", e$message, "\n")
@@ -481,7 +481,7 @@ init_html <- function() {
             </div>
         </div>
         <div class='new-feature' style='margin-top:15px;'>
-            <strong>✨ NEW IN V6:</strong> Drug-Pathway Integration | Mechanism of Action diagrams | 
+            <strong>✨ NEW IN V6:</strong> Drug-Pathway Integration | Mechanism of Action diagrams |
             Polypharmacology networks | Database-queried pathway annotations
         </div>
     </div>"
@@ -757,10 +757,10 @@ add_drug_pathway_integration <- function(heatmap_data, moa_data, polypharm_drugs
             <li><strong>Mechanism of Action:</strong> How each drug works at the molecular level</li>
             <li><strong>Polypharmacology:</strong> Drugs that target multiple pathways (often more effective)</li>
         </ul>
-        <p><strong>Clinical relevance:</strong> Drugs that target multiple dysregulated pathways may have 
+        <p><strong>Clinical relevance:</strong> Drugs that target multiple dysregulated pathways may have
         broader therapeutic efficacy and lower resistance development.</p>
     </div>")
-    
+
     if(!is.null(heatmap_data)) {
         html_buffer <<- c(html_buffer, paste0(
             "<div class='key-finding'>",
@@ -769,23 +769,23 @@ add_drug_pathway_integration <- function(heatmap_data, moa_data, polypharm_drugs
             "</div>"
         ))
     }
-    
+
     if(!is.null(moa_data) && nrow(moa_data) > 0) {
         html_buffer <<- c(html_buffer, "
         <h4>Top Drug Mechanisms:</h4>
         <table class='pathway-table'>
             <tr><th>Drug</th><th>Mechanism of Action</th><th>NES</th><th>FDR</th></tr>")
-        
+
         for(i in 1:nrow(moa_data)) {
             html_buffer <<- c(html_buffer, sprintf(
                 "<tr><td><strong>%s</strong></td><td class='moa-box'>%s</td><td class='nes-neg'>%.2f</td><td class='sig-green'>%.2e</td></tr>",
                 moa_data$Drug[i], moa_data$MOA[i], moa_data$NES[i], moa_data$p.adjust[i]
             ))
         }
-        
+
         html_buffer <<- c(html_buffer, "</table>")
     }
-    
+
     if(!is.null(polypharm_drugs) && length(polypharm_drugs) > 0) {
         html_buffer <<- c(html_buffer, paste0(
             "<div class='key-finding'>",
@@ -803,11 +803,11 @@ add_pathway_database_info <- function(pathway_name, top_n = 3) {
     # Query databases for top pathways only
     wiki_info <- query_wikipathways(pathway_name)
     reactome_info <- query_reactome(pathway_name)
-    
+
     if(!is.null(wiki_info) || !is.null(reactome_info)) {
         html_buffer <<- c(html_buffer, "
         <div class='section-header database-header'>📚 Pathway Database Information</div>")
-        
+
         if(!is.null(wiki_info)) {
             html_buffer <<- c(html_buffer, sprintf(
                 "<div class='database-query'>
@@ -818,7 +818,7 @@ add_pathway_database_info <- function(pathway_name, top_n = 3) {
                 wiki_info$name, wiki_info$id, wiki_info$url, wiki_info$url
             ))
         }
-        
+
         if(!is.null(reactome_info)) {
             html_buffer <<- c(html_buffer, sprintf(
                 "<div class='database-query'>
@@ -827,7 +827,7 @@ add_pathway_database_info <- function(pathway_name, top_n = 3) {
                     <strong>Description:</strong> %s<br>
                     <strong>URL:</strong> <a href='%s' target='_blank'>%s</a>
                 </div>",
-                reactome_info$name, reactome_info$id, 
+                reactome_info$name, reactome_info$id,
                 reactome_info$description,
                 reactome_info$url, reactome_info$url
             ))
@@ -881,6 +881,9 @@ args <- commandArgs(trailingOnly=TRUE)
 vst_file <- args[1]; results_dir <- args[2]; gmt_dir <- args[3];
 string_dir <- args[4]; out_prefix <- args[5]
 
+# Optional argument: Target Contrast (Default: "ALL")
+target_contrast <- if(length(args) >= 6) args[6] else "ALL"
+
 init_html()
 
 cat("LOG: Loading STRING...\n")
@@ -901,6 +904,20 @@ mat_vst_sym <- as.data.frame(mat_vst) %>% tibble::rownames_to_column("symbol") %
     tibble::column_to_rownames("symbol") %>% as.matrix()
 
 contrasts <- list.files(file.path(results_dir, "tables/differential"), pattern=".results.tsv", full.names=TRUE)
+
+# Filter contrasts if a specific target is requested
+if(target_contrast != "ALL") {
+    cat(paste0("\nLOG: Filtering for specific contrast: ", target_contrast, "\n"))
+    # Construct expected filename pattern based on contrast ID
+    target_pattern <- paste0(target_contrast, ".deseq2.results.tsv")
+    contrasts <- contrasts[basename(contrasts) == target_pattern]
+
+    if(length(contrasts) == 0) {
+        available <- sub(".deseq2.results.tsv", "", basename(list.files(file.path(results_dir, "tables/differential"), pattern=".results.tsv")))
+        stop(paste0("ERROR: Target contrast '", target_contrast, "' not found. Available contrasts: ", paste(available, collapse=", ")))
+    }
+}
+
 contrast_ids <- sub(".deseq2.results.tsv", "", basename(contrasts))
 
 add_toc(contrast_ids)
@@ -966,7 +983,7 @@ for(f in contrasts) {
 
         if(!is.null(gsea_out) && nrow(gsea_out) > 0) {
             write.csv(gsea_out@result, paste0(out_prefix, "_", cid, "_", db_name, ".csv"))
-            
+
             # Store first pathway results for drug-pathway integration
             if(is.null(pathway_results_for_integration)) {
                 pathway_results_for_integration <- gsea_out@result
@@ -986,8 +1003,8 @@ for(f in contrasts) {
             if(nrow(gsea_out) >= 5) {
                 add_interpretation_guide("emap")
                 p_emap <- emapplot(gsea_out, showCategory=GSEA_EMAP_N,
-                                  cex.params=list(category_label=0.6)) +
-                         ggtitle(paste0(db_name, ": ", cid))
+                                 cex.params=list(category_label=0.6)) +
+                          ggtitle(paste0(db_name, ": ", cid))
                 save_mqc(p_emap, paste0(out_prefix, "_", cid, "_GSEA_Emap_", db_name), 12, 10)
             }
 
@@ -1004,7 +1021,7 @@ for(f in contrasts) {
                 p_cnet <- cnetplot(gsea_out, showCategory=GSEA_NETWORK_N,
                                   foldChange=gene_list, colorEdge=TRUE,
                                   cex.params=list(category_label=0.6, gene_label=0.5)) +
-                         ggtitle(paste0(db_name, ": ", cid))
+                          ggtitle(paste0(db_name, ": ", cid))
                 save_mqc(p_cnet, paste0(out_prefix, "_", cid, "_GSEA_Network_", db_name), 14, 14)
             }
 
@@ -1042,7 +1059,7 @@ for(f in contrasts) {
     # ==============================================================================
     dsig_path <- list.files(gmt_dir, pattern="dsigdb", full.names=TRUE)[1]
     drug_results_for_integration <- NULL
-    
+
     if(!is.na(dsig_path)) {
         cat(paste0("  > Drug Discovery...\n"))
         add_drug_interpretation()
@@ -1069,7 +1086,7 @@ for(f in contrasts) {
                 save_mqc(p_drug_dot, paste0(out_prefix, "_", cid, "_Drug_Dotplot"), 14, 12)
 
                 p_drug_emap <- emapplot(drug_gsea, showCategory=20,
-                                       cex.params=list(category_label=0.6)) +
+                                      cex.params=list(category_label=0.6)) +
                               ggtitle(paste0("Drug Similarity: ", cid))
                 save_mqc(p_drug_emap, paste0(out_prefix, "_", cid, "_Drug_Emap"), 12, 10)
 
@@ -1089,21 +1106,21 @@ for(f in contrasts) {
     heatmap_result <- NULL
     moa_result <- NULL
     polypharm_result <- NULL
-    
+
     if(!is.null(pathway_results_for_integration) && !is.null(drug_results_for_integration)) {
         cat(paste0("  > Drug-Pathway Integration...\n"))
-        
+
         # 1. Drug-Pathway Overlap Heatmap
         heatmap_result <- create_drug_pathway_heatmap(
-            pathway_results_for_integration, 
-            drug_results_for_integration, 
-            out_prefix, 
+            pathway_results_for_integration,
+            drug_results_for_integration,
+            out_prefix,
             cid
         )
-        
+
         # 2. MOA Diagram
         moa_result <- create_moa_diagram(drug_results_for_integration, out_prefix, cid)
-        
+
         # 3. Polypharmacology Network
         polypharm_result <- create_polypharm_network(
             drug_results_for_integration,
@@ -1111,7 +1128,7 @@ for(f in contrasts) {
             out_prefix,
             cid
         )
-        
+
         # Add to HTML report
         add_drug_pathway_integration(heatmap_result, moa_result, polypharm_result)
     }
@@ -1144,7 +1161,7 @@ for(f in contrasts) {
                      scale_color_manual(values=c("Hub"="#E41A1C", "Node"="#377EB8")) +
                      scale_size_manual(values=c("Hub"=5, "Node"=2)) +
                      geom_node_text(aes(label=ifelse(type=="Hub", name, "")),
-                                   repel=TRUE, fontface="bold", size=3.5, bg.color="white") +
+                                  repel=TRUE, fontface="bold", size=3.5, bg.color="white") +
                      theme_void() +
                      ggtitle(paste0("PPI Network: ", cid)) +
                      theme(plot.title = element_text(size=16, hjust=0.5))
@@ -1176,7 +1193,7 @@ cat("\nLOG: Generating LLM Prompt...\n")
 txt_prompt <- c(
     "╔══════════════════════════════════════════════════════════════════════════╗",
     "║     PATHWAY ENRICHMENT & DRUG DISCOVERY ANALYSIS SUMMARY (v6 SUPREME)    ║",
-    "║                    For AI/LLM Biological Interpretation                  ║",
+    "║                     For AI/LLM Biological Interpretation                 ║",
     "╚══════════════════════════════════════════════════════════════════════════╝",
     "",
     paste0("Generated: ", Sys.Date()),
@@ -1321,7 +1338,7 @@ txt_prompt <- c(txt_prompt,
 writeLines(txt_prompt, paste0(dirname(out_prefix), "/LLM_Analysis_Prompt.txt"))
 
 cat("\n╔═══════════════════════════════════════════════════════════════╗\n")
-cat("║           SUPREME EDITION v6 ANALYSIS COMPLETE                ║\n")
+cat("║            SUPREME EDITION v6 ANALYSIS COMPLETE               ║\n")
 cat("╚═══════════════════════════════════════════════════════════════╝\n\n")
 cat("✅ Generated Files:\n")
 cat(sprintf("   • HTML Report: %s/Analysis_Narrative_mqc.html\n", dirname(out_prefix)))

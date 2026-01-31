@@ -48,7 +48,7 @@ fi
 # STEP 1: ULTIMATE PATHWAY/DRUG/PPI ANALYSIS
 # ==============================================================================
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║  STEP 1: Ultimate Pathway Enrichment & Drug Discovery         ║"
+echo "║  STEP 1: Ultimate Pathway Enrichment & Drug Discovery          ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" \
@@ -57,7 +57,8 @@ singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" \
     "$RESULTS_DIR" \
     "$GMT_DIR" \
     "$STRING_DIR" \
-    "$OUT_DIR/Analysis"
+    "$OUT_DIR/Analysis" \
+    "therapy_impact"
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Pathway analysis failed"
@@ -71,7 +72,7 @@ echo ""
 # STEP 2: GENERATE MULTIQC REPORT
 # ==============================================================================
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║  STEP 2: MultiQC Aggregation                                  ║"
+echo "║  STEP 2: MultiQC Aggregation                                 ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 
 # Create MultiQC configuration
