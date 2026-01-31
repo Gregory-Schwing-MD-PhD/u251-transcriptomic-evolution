@@ -231,7 +231,7 @@ loadings <- pca$rotation
 pc_drivers_text <- ""
 pc_drivers_list <- list()
 
-for(i in 1:min(5, ncol(loadings))) {
+for(i in 1:n_pcs_to_show) {
     pc <- paste0("PC", i)
     top <- names(sort(abs(loadings[, i]), decreasing=TRUE)[1:8])
     pc_drivers_list[[pc]] <- top
@@ -597,7 +597,7 @@ p_plast <- ggplot(meta, aes(x=Classification, y=Plasticity, fill=Classification)
     stat_summary(fun=mean, geom="point", shape=23, size=4, color="black", fill="white") +
     scale_fill_manual(values=GROUP_COLORS) +
     labs(title="Cellular Plasticity (Shannon Entropy - Z-Score)",
-         subtitle=sprintf("Recommended: %s P=%s %s | See matrix for all tests", 
+         subtitle=sprintf("Recommended: %s P=%s %s | See matrix for all tests",
                          primary_test, safe_format(primary_p), interpret_p(primary_p)),
          caption="Diamond = mean, box = median ± IQR, dots = individual samples") +
     theme_publication() +
@@ -845,10 +845,10 @@ trajectory_results <- merge(trajectory_results, gsva_traj, by="Signature", all=T
 # Add polynomial contrast results from BOTH weighting methods
 for(method_name in c("Weighted", "Unweighted")) {
     fit_poly <- if(method_name == "Weighted") res_weighted$fit_poly else res_unweighted$fit_poly
-    
+
     tt_linear <- topTable(fit_poly, coef="Linear", number=Inf, sort.by="none")
     tt_quad <- topTable(fit_poly, coef="Quadratic", number=Inf, sort.by="none")
-    
+
     trajectory_results[[paste0(method_name, "_Linear_P")]] <- tt_linear[trajectory_results$Signature, "adj.P.Val"]
     trajectory_results[[paste0(method_name, "_Linear_Coef")]] <- tt_linear[trajectory_results$Signature, "logFC"]
     trajectory_results[[paste0(method_name, "_Quad_P")]] <- tt_quad[trajectory_results$Signature, "adj.P.Val"]
@@ -860,9 +860,9 @@ trajectory_results$Pattern <- sapply(1:nrow(trajectory_results), function(i) {
     lin_p_w <- trajectory_results$Weighted_Linear_P[i]
     quad_p_w <- trajectory_results$Weighted_Quad_P[i]
     jt_p <- trajectory_results$ZScore_Global_JT_P[i]
-    
+
     if(is.na(jt_p)) return("No trend")
-    
+
     if(jt_p < 0.05 && lin_p_w < 0.05 && quad_p_w >= 0.05) {
         return("Linear (monotonic)")
     } else if(quad_p_w < 0.05) {
@@ -878,7 +878,7 @@ trajectory_results$Pattern <- sapply(1:nrow(trajectory_results), function(i) {
 trajectory_results$Consensus_Trend <- sapply(1:nrow(trajectory_results), function(i) {
     z_sig <- !is.na(trajectory_results$ZScore_Global_JT_P[i]) && trajectory_results$ZScore_Global_JT_P[i] < 0.05
     g_sig <- !is.na(trajectory_results$GSVA_Global_JT_P[i]) && trajectory_results$GSVA_Global_JT_P[i] < 0.05
-    
+
     if(z_sig && g_sig) {
         return("ROBUST (Both)")
     } else if (z_sig) {
@@ -1134,7 +1134,7 @@ if(nrow(cor_pairs) > 0) {
     )
     cor_summary <- cor_summary[order(abs(cor_summary$Correlation), decreasing=TRUE), ]
     write.csv(cor_summary, paste0(opt$out, "_Signature_Correlations_High.csv"), row.names=FALSE)
-    
+
     add_stat_log("Signature Co-evolution (High Correlations)", sprintf(
         "Detected %d high correlations (|r| > 0.6):\n  %s",
         nrow(cor_summary),
@@ -1175,364 +1175,668 @@ Heatmap(sig_cor, name="Pearson\nCorr",
 dev.off()
 
 # ==============================================================================
-# 11. ENHANCED LLM SUMMARY (ULTIMATE EDITION)
+# 11. ENHANCED LLM SUMMARY (ULTIMATE EDITION) - NOW IN HTML
 # ==============================================================================
-cat("LOG [11/13]: Generating Ultimate LLM Summary...\n")
+cat("LOG [11/13]: Generating Ultimate LLM Summary (HTML)...\n")
 
-llm_summary <- paste0(
-    "═══════════════════════════════════════════════════════════════════\n",
-    "GBM LITT THERAPY SUBTYPE EVOLUTION - ULTIMATE ANALYSIS v16.4\n",
-    "═══════════════════════════════════════════════════════════════════\n\n",
-    "EXPERIMENTAL DESIGN:\n",
-    sprintf("  Trajectory: %s\n", paste(levs, collapse=" → ")),
-    sprintf("  Samples: %s\n", paste(names(group_sizes), "=", group_sizes, collapse=", ")),
-    sprintf("  Total signatures tested: %d\n", length(sigs)),
-    sprintf("  Statistical framework: 2×4×%d matrix (Scoring×Tests×Comparisons)\n", length(pairwise_combos)+1),
-    sprintf("  Research Question: Does Litt therapy induce subtype evolution?\n\n"),
+# Build comprehensive HTML LLM summary
+llm_html <- paste0(
+    "<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='UTF-8'>
+    <title>GBM LITT Therapy Analysis - Complete Results</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 1200px; margin: 40px auto; padding: 20px; background: #f5f7fa; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px; }
+        .header h1 { margin: 0; font-size: 28px; }
+        .header .subtitle { opacity: 0.9; margin-top: 10px; font-size: 14px; }
+        .section { background: white; padding: 25px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .section h2 { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 10px; margin-top: 0; }
+        .section h3 { color: #764ba2; margin-top: 20px; }
+        .context-box { background: #e8eaf6; border-left: 4px solid #667eea; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .stat-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        .stat-table th { background: #667eea; color: white; padding: 12px; text-align: left; }
+        .stat-table td { padding: 10px; border-bottom: 1px solid #e0e0e0; }
+        .stat-table tr:hover { background: #f5f5f5; }
+        .highlight { background: #fff3cd; padding: 2px 5px; border-radius: 3px; }
+        .sig-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .sig-high { background: #d4edda; color: #155724; }
+        .sig-mod { background: #fff3cd; color: #856404; }
+        .sig-low { background: #f8d7da; color: #721c24; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .metric-card { background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #667eea; }
+        .metric-card .label { font-size: 12px; color: #666; text-transform: uppercase; }
+        .metric-card .value { font-size: 24px; font-weight: bold; color: #333; margin: 5px 0; }
+        pre { background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
 
-    "═══════════════════════════════════════════════════════════════════\n",
-    "1. GLOBAL TRANSCRIPTOMIC STRUCTURE (PCA)\n",
-    "═══════════════════════════════════════════════════════════════════\n",
-    sprintf("  PC1 variance explained: %.1f%%\n", var_pc[1]),
-    sprintf("  PC2 variance explained: %.1f%%\n", var_pc[2]),
-    sprintf("  Cumulative (PC1+PC2): %.1f%%\n\n", cum_var[2]),
+<div class='header'>
+    <h1>🧬 GBM LITT Therapy Subtype Evolution Analysis</h1>
+    <div class='subtitle'>Ultimate Edition v16.4 - Complete Interpretation Guide for AI Analysis</div>
+    <div class='subtitle'>Generated: ", as.character(Sys.time()), "</div>
+</div>
+
+<div class='section'>
+    <h2>📋 Experimental Design</h2>
+    <div class='context-box'>
+        <strong>Research Question:</strong> Does laser interstitial thermal therapy (LITT) induce molecular subtype evolution in glioblastoma?<br>
+        <strong>Approach:</strong> Longitudinal tracking of GBM subtype signatures across three disease states using comprehensive multi-method statistical framework.
+    </div>
+    <div class='metric-grid'>
+        <div class='metric-card'>
+            <div class='label'>Trajectory</div>
+            <div class='value'>", paste(levs, collapse=" → "), "</div>
+        </div>
+        <div class='metric-card'>
+            <div class='label'>Total Samples</div>
+            <div class='value'>", sum(group_sizes), "</div>
+        </div>
+        <div class='metric-card'>
+            <div class='label'>Signatures Tested</div>
+            <div class='value'>", length(sigs), "</div>
+        </div>
+        <div class='metric-card'>
+            <div class='label'>Statistical Framework</div>
+            <div class='value'>2×4×", length(pairwise_combos)+1, "</div>
+        </div>
+    </div>
     
-    "  PERMANOVA (Group Separation Test):\n",
-    sprintf("    F-statistic: %.3f\n", perm_f),
-    sprintf("    R² (variance explained by groups): %.3f (%.1f%%)\n", perm_r2, perm_r2*100),
-    sprintf("    P-value: %s %s\n", safe_format(perm_p), interpret_p(perm_p)),
-    sprintf("    Interpretation: Stages %s transcriptionally distinct\n\n",
-            if(!is.na(perm_p) && perm_p < 0.05) "ARE" else "are NOT"),
-    
-    "  Top Gene Drivers by Principal Component:\n"
+    <h3>Sample Distribution</h3>
+    <table class='stat-table'>
+        <tr><th>Stage</th><th>N</th><th>Percentage</th></tr>"
 )
 
-for(pc in names(pc_drivers_list)) {
-    llm_summary <- paste0(llm_summary, sprintf("    %s: %s\n", pc, paste(pc_drivers_list[[pc]], collapse=", ")))
+for(grp in names(group_sizes)) {
+    llm_html <- paste0(llm_html,
+        "<tr><td>", grp, "</td><td>", group_sizes[grp], "</td><td>", 
+        round(group_sizes[grp]/sum(group_sizes)*100, 1), "%</td></tr>")
 }
 
-llm_summary <- paste0(llm_summary, "\n",
-    "═══════════════════════════════════════════════════════════════════\n",
-    "2. CELLULAR PLASTICITY (Comprehensive 2×4 Matrix)\n",
-    "═══════════════════════════════════════════════════════════════════\n"
+llm_html <- paste0(llm_html, "
+    </table>
+</div>
+
+<div class='section'>
+    <h2>🔬 1. Global Transcriptomic Structure (PCA)</h2>
+    <div class='context-box'>
+        <strong>Why this matters:</strong> PCA reveals whether treatment stages occupy distinct transcriptomic spaces.
+        High PC1/PC2 variance indicates strong signal separation. PERMANOVA tests statistical significance of group separation.
+    </div>
+    
+    <h3>Variance Decomposition</h3>
+    <div class='metric-grid'>
+        <div class='metric-card'>
+            <div class='label'>PC1 Variance</div>
+            <div class='value'>", var_pc[1], "%</div>
+        </div>
+        <div class='metric-card'>
+            <div class='label'>PC2 Variance</div>
+            <div class='value'>", var_pc[2], "%</div>
+        </div>
+        <div class='metric-card'>
+            <div class='label'>Cumulative (PC1+PC2)</div>
+            <div class='value'>", cum_var[2], "%</div>
+        </div>
+        <div class='metric-card'>
+            <div class='label'>First ", min(5, n_pcs_to_show), " PCs Total</div>
+            <div class='value'>", cum_var[min(5, n_pcs_to_show)], "%</div>
+        </div>
+    </div>
+    
+    <h3>PERMANOVA (Group Separation Test)</h3>
+    <div class='context-box'>
+        <strong>Interpretation:</strong> Tests whether groups have significantly different multivariate centroids in gene expression space.
+        R² represents the proportion of total variance explained by group membership.
+    </div>
+    <table class='stat-table'>
+        <tr><th>Statistic</th><th>Value</th><th>Interpretation</th></tr>
+        <tr><td>F-statistic</td><td>", sprintf("%.3f", perm_f), "</td><td rowspan='3'>", 
+            if(!is.na(perm_p) && perm_p < 0.05) "<span class='sig-badge sig-high'>SIGNIFICANT SEPARATION</span>" else "<span class='sig-badge sig-low'>NO SEPARATION</span>",
+        "</td></tr>
+        <tr><td>R² (variance explained)</td><td>", sprintf("%.3f (%.1f%%)", perm_r2, perm_r2*100), "</td></tr>
+        <tr><td>P-value</td><td>", safe_format(perm_p), " ", interpret_p(perm_p), "</td></tr>
+    </table>
+    
+    <h3>Gene Drivers by Principal Component</h3>
+    <div class='context-box'>
+        <strong>Biological Interpretation:</strong> Genes with highest loadings drive separation along each PC.
+        These represent the molecular features most responsible for transcriptomic differences between stages.
+    </div>"
 )
 
-# Add plasticity results
-for(scoring in c("Z-Score", "GSVA")) {
-    llm_summary <- paste0(llm_summary, sprintf("\n%s Plasticity:\n", scoring))
-    scoring_results <- plasticity_matrix[plasticity_matrix$Scoring == scoring, ]
-    for(i in 1:nrow(scoring_results)) {
-        llm_summary <- paste0(llm_summary,
-            sprintf("  %s: %s, P = %s %s\n",
-                   scoring_results$Test[i],
-                   scoring_results$Statistic[i],
-                   safe_format(scoring_results$P_value[i]),
-                   scoring_results$Significance[i]))
-    }
+for(i in 1:n_pcs_to_show) {
+    pc_name <- paste0("PC", i)
+    llm_html <- paste0(llm_html,
+        "<h4>", pc_name, " (", var_pc[i], "% variance)</h4>
+        <p><code>", paste(pc_drivers_list[[pc_name]], collapse=", "), "</code></p>")
 }
 
-llm_summary <- paste0(llm_summary, "\n  Group Statistics (Z-Score):\n")
+llm_html <- paste0(llm_html, "
+</div>
+
+<div class='section'>
+    <h2>🎭 2. Cellular Plasticity Analysis (2×4 Matrix)</h2>
+    <div class='context-box'>
+        <strong>What is plasticity?</strong> Shannon entropy of subtype signature scores. High plasticity = cells express multiple subtype programs simultaneously (dedifferentiation). 
+        Low plasticity = commitment to single subtype identity.<br><br>
+        <strong>Clinical relevance:</strong> High plasticity often correlates with therapy resistance and recurrence as cells can switch phenotypes to evade treatment.
+    </div>
+    
+    <h3>Statistical Testing Framework</h3>
+    <table class='stat-table'>
+        <tr><th>Scoring Method</th><th>Test</th><th>Statistic</th><th>P-value</th><th>Sig</th></tr>"
+)
+
+for(i in 1:nrow(plasticity_matrix)) {
+    llm_html <- paste0(llm_html,
+        "<tr>
+            <td>", plasticity_matrix$Scoring[i], "</td>
+            <td>", plasticity_matrix$Test[i], "</td>
+            <td>", plasticity_matrix$Statistic[i], "</td>
+            <td>", safe_format(plasticity_matrix$P_value[i]), "</td>
+            <td>", plasticity_matrix$Significance[i], "</td>
+        </tr>")
+}
+
+llm_html <- paste0(llm_html, "
+    </table>
+    
+    <div class='context-box'>
+        <strong>Recommended Test:</strong> ",
+        if(n_total < 30 || shapiro_p_zscore < 0.05) {
+            sprintf("<span class='highlight'>Kruskal-Wallis</span> (N=%d, data is %s)", 
+                    n_total, if(shapiro_p_zscore < 0.05) "non-normal" else "small sample")
+        } else {
+            sprintf("<span class='highlight'>ANOVA</span> (N=%d, data is normally distributed)", n_total)
+        },
+    "</div>
+    
+    <h3>Descriptive Statistics by Stage</h3>
+    <table class='stat-table'>
+        <tr><th>Stage</th><th>N</th><th>Mean±SD</th><th>Median</th><th>IQR</th></tr>"
+)
+
 for(i in 1:nrow(plast_stats)) {
-    llm_summary <- paste0(llm_summary,
-        sprintf("    %s: Mean=%.3f±%.3f, Median=%.3f, IQR=%.3f (n=%d)\n",
-                plast_stats$Classification[i], plast_stats$Mean[i], plast_stats$SD[i],
-                plast_stats$Median[i], plast_stats$IQR[i], plast_stats$N[i]))
+    llm_html <- paste0(llm_html,
+        "<tr>
+            <td>", plast_stats$Classification[i], "</td>
+            <td>", plast_stats$N[i], "</td>
+            <td>", sprintf("%.3f±%.3f", plast_stats$Mean[i], plast_stats$SD[i]), "</td>
+            <td>", sprintf("%.3f", plast_stats$Median[i]), "</td>
+            <td>", sprintf("%.3f", plast_stats$IQR[i]), "</td>
+        </tr>")
 }
 
-llm_summary <- paste0(llm_summary, "\n",
-    "═══════════════════════════════════════════════════════════════════\n",
-    "3. SIGNATURE CO-EVOLUTION (Complete Correlation Matrix)\n",
-    "═══════════════════════════════════════════════════════════════════\n"
-)
+llm_html <- paste0(llm_html, "
+    </table>
+</div>
 
-# Add ALL pairwise correlations
-llm_summary <- paste0(llm_summary, sprintf("  Total signature pairs analyzed: %d\n\n", (nrow(sig_cor)*(nrow(sig_cor)-1))/2))
+<div class='section'>
+    <h2>🔗 3. Signature Co-evolution (Complete Correlation Matrix)</h2>
+    <div class='context-box'>
+        <strong>Biological Interpretation:</strong> Signatures that correlate positively often represent co-regulated programs 
+        (e.g., metabolic shift).
+        Negative correlations suggest mutually exclusive states (e.g., proliferative vs invasive phenotypes).<br><br>
+        <strong>Total pairwise correlations analyzed:</strong> ", (nrow(sig_cor)*(nrow(sig_cor)-1))/2, "
+    </div>
+    
+    <h3>High Correlations (|r| > 0.6)</h3>"
+)
 
 if(nrow(cor_summary) > 0) {
-    llm_summary <- paste0(llm_summary, sprintf("  High Correlations (|r| > 0.6): %d pairs\n\n", nrow(cor_summary)))
-    for(i in 1:min(15, nrow(cor_summary))) {
-        llm_summary <- paste0(llm_summary,
-            sprintf("    %s ↔ %s: r=%.3f\n",
-                    cor_summary$Sig1[i], cor_summary$Sig2[i], cor_summary$Correlation[i]))
+    llm_html <- paste0(llm_html,
+        "<p><strong>", nrow(cor_summary), " high-confidence correlations detected</strong></p>
+        <table class='stat-table'>
+            <tr><th>Signature 1</th><th>Signature 2</th><th>Correlation (r)</th><th>Strength</th></tr>")
+    
+    for(i in 1:nrow(cor_summary)) {
+        r_val <- cor_summary$Correlation[i]
+        strength <- if(abs(r_val) > 0.8) "Very Strong" else if(abs(r_val) > 0.7) "Strong" else "Moderate"
+        badge_class <- if(abs(r_val) > 0.8) "sig-high" else if(abs(r_val) > 0.7) "sig-mod" else "sig-low"
+        
+        llm_html <- paste0(llm_html,
+            "<tr>
+                <td>", cor_summary$Sig1[i], "</td>
+                <td>", cor_summary$Sig2[i], "</td>
+                <td>", sprintf("%.3f", r_val), "</td>
+                <td><span class='sig-badge ", badge_class, "'>", strength, "</span></td>
+            </tr>")
     }
-    if(nrow(cor_summary) > 15) {
-        llm_summary <- paste0(llm_summary, sprintf("\n    ... and %d more (see full matrix CSV)\n", nrow(cor_summary) - 15))
-    }
+    
+    llm_html <- paste0(llm_html, "</table>")
 } else {
-    llm_summary <- paste0(llm_summary, "  No strong correlations (|r| > 0.6) detected\n")
+    llm_html <- paste0(llm_html, "<p><em>No high correlations (|r| > 0.6) detected between signatures.</em></p>")
 }
 
-llm_summary <- paste0(llm_summary, "\n",
-    "═══════════════════════════════════════════════════════════════════\n",
-    "4. TRAJECTORY TRENDS (Dual Method Consensus + Patterns)\n",
-    "═══════════════════════════════════════════════════════════════════\n"
+# Add COMPLETE correlation matrix
+llm_html <- paste0(llm_html, "
+    <h3>Complete Correlation Matrix</h3>
+    <div class='context-box'>
+        All pairwise Pearson correlations between signatures. Use this to identify co-regulated programs and mutually exclusive states.
+    </div>
+    <table class='stat-table'>
+        <tr><th>Signature Pair</th><th>Correlation (r)</th></tr>")
+
+for(i in 1:(nrow(sig_cor)-1)) {
+    for(j in (i+1):nrow(sig_cor)) {
+        r_val <- sig_cor[i,j]
+        llm_html <- paste0(llm_html,
+            "<tr><td>", rownames(sig_cor)[i], " ↔ ", rownames(sig_cor)[j], 
+            "</td><td>", sprintf("%.3f", r_val), "</td></tr>")
+    }
+}
+
+llm_html <- paste0(llm_html, "
+    </table>
+</div>
+
+<div class='section'>
+    <h2>📈 4. Trajectory Trends (Dual Method Consensus)</h2>
+    <div class='context-box'>
+        <strong>Pattern Classification:</strong>
+        <ul>
+            <li><strong>Linear (monotonic):</strong> Steady progression across stages (e.g., progressive EMT acquisition)</li>
+            <li><strong>Quadratic (spike/dip):</strong> Transient state - peaks or dips at intermediate stage (e.g., therapy shock response)</li>
+            <li><strong>Weak trend:</strong> Suggestive pattern but not statistically robust</li>
+            <li><strong>No trend:</strong> Stable expression across trajectory</li>
+        </ul>
+        <strong>Consensus Interpretation:</strong> ROBUST = significant in BOTH Z-Score AND GSVA (highest confidence)
+    </div>
+    
+    <h3>Pattern Distribution</h3>
+    <table class='stat-table'>
+        <tr><th>Pattern</th><th>Count</th><th>Percentage</th></tr>"
 )
 
-# Add trajectory pattern summary
-llm_summary <- paste0(llm_summary, "  Pattern Distribution:\n")
 pattern_table <- table(trajectory_results$Pattern)
 for(pattern in names(pattern_table)) {
-    llm_summary <- paste0(llm_summary, sprintf("    %s: %d signatures\n", pattern, pattern_table[pattern]))
+    llm_html <- paste0(llm_html,
+        "<tr><td>", pattern, "</td><td>", pattern_table[pattern], "</td><td>", 
+        round(pattern_table[pattern]/sum(pattern_table)*100, 1), "%</td></tr>")
 }
 
-llm_summary <- paste0(llm_summary, "\n  Consensus Trends:\n")
+llm_html <- paste0(llm_html, "
+    </table>
+    
+    <h3>Consensus Trends</h3>
+    <table class='stat-table'>
+        <tr><th>Consensus Level</th><th>Count</th><th>Percentage</th></tr>"
+)
+
 consensus_table <- table(trajectory_results$Consensus_Trend)
 for(cons in names(consensus_table)) {
-    llm_summary <- paste0(llm_summary, sprintf("    %s: %d signatures\n", cons, consensus_table[cons]))
+    llm_html <- paste0(llm_html,
+        "<tr><td>", cons, "</td><td>", consensus_table[cons], "</td><td>", 
+        round(consensus_table[cons]/sum(consensus_table)*100, 1), "%</td></tr>")
 }
 
 sig_trends <- trajectory_results[trajectory_results$Consensus_Trend != "None", ]
 if(nrow(sig_trends) > 0) {
-    llm_summary <- paste0(llm_summary, "\n  Significant Monotonic Trends:\n")
+    llm_html <- paste0(llm_html, "
+    </table>
+    
+    <h3>Significant Monotonic Trends (Complete Details)</h3>
+    <div class='context-box'>
+        Signatures showing significant directional trends across the treatment trajectory.
+        These represent molecular programs that systematically increase or decrease following LITT therapy.
+    </div>")
+    
     sig_trends <- sig_trends[order(match(sig_trends$Consensus_Trend, c("ROBUST (Both)", "Z-Score Only", "GSVA Only"))), ]
+    
     for(i in 1:nrow(sig_trends)) {
-        sig <- sig_trends$Signature[i]
-        llm_summary <- paste0(llm_summary, sprintf(
-            "    %s [%s]:\n      Z-Score JT: P=%s (Stat=%.1f, Direction=%s)\n      GSVA JT: P=%s (Stat=%.1f, Direction=%s)\n      Pattern: %s\n",
-            sig, sig_trends$Consensus_Trend[i],
-            safe_format(sig_trends$ZScore_Global_JT_P[i]), sig_trends$ZScore_Global_JT_Stat[i], sig_trends$ZScore_Global_JT_Direction[i],
-            safe_format(sig_trends$GSVA_Global_JT_P[i]), sig_trends$GSVA_Global_JT_Stat[i], sig_trends$GSVA_Global_JT_Direction[i],
-            sig_trends$Pattern[i]
-        ))
+        sig_name <- sig_trends$Signature[i]
+        cons_badge <- if(sig_trends$Consensus_Trend[i] == "ROBUST (Both)") "sig-high" else "sig-mod"
+        
+        llm_html <- paste0(llm_html,
+            "<h4>", sig_name, " <span class='sig-badge ", cons_badge, "'>", sig_trends$Consensus_Trend[i], "</span></h4>
+            <table class='stat-table'>
+                <tr><th>Method</th><th>JT Statistic</th><th>P-value</th><th>Direction</th></tr>
+                <tr>
+                    <td>Z-Score</td>
+                    <td>", sprintf("%.1f", sig_trends$ZScore_Global_JT_Stat[i]), "</td>
+                    <td>", safe_format(sig_trends$ZScore_Global_JT_P[i]), " ", interpret_p(sig_trends$ZScore_Global_JT_P[i]), "</td>
+                    <td>", sig_trends$ZScore_Global_JT_Direction[i], "</td>
+                </tr>
+                <tr>
+                    <td>GSVA</td>
+                    <td>", sprintf("%.1f", sig_trends$GSVA_Global_JT_Stat[i]), "</td>
+                    <td>", safe_format(sig_trends$GSVA_Global_JT_P[i]), " ", interpret_p(sig_trends$GSVA_Global_JT_P[i]), "</td>
+                    <td>", sig_trends$GSVA_Global_JT_Direction[i], "</td>
+                </tr>
+            </table>
+            <p><strong>Pattern:</strong> ", sig_trends$Pattern[i], "</p>")
     }
+} else {
+    llm_html <- paste0(llm_html, "
+    </table>
+    <p><em>No signatures with significant monotonic trends detected.</em></p>")
 }
 
-llm_summary <- paste0(llm_summary, "\n",
-    "═══════════════════════════════════════════════════════════════════\n",
-    "5. PAIRWISE COMPARISONS (2×4 Matrix per Comparison)\n",
-    "═══════════════════════════════════════════════════════════════════\n",
-    sprintf("  Total comparisons tested: %d (Global + %d Pairwise)\n",
-            length(pairwise_combos)+1, length(pairwise_combos)),
-    sprintf("  Tests per comparison: 8 (2 scoring × 4 statistical tests)\n\n")
-)
+llm_html <- paste0(llm_html, "
+</div>
 
-# Add pairwise results
+<div class='section'>
+    <h2>⚖️ 5. Pairwise Comparisons (Comprehensive Testing)</h2>
+    <div class='context-box'>
+        <strong>Testing Framework:</strong> 2×4 matrix per comparison (2 scoring methods × 4 statistical tests)<br>
+        <strong>Total comparisons:</strong> ", length(pairwise_combos)+1, " (1 Global + ", length(pairwise_combos), " Pairwise)<br>
+        <strong>Total tests per signature:</strong> ", 2*4*(length(pairwise_combos)+1), "<br><br>
+        
+        <strong>Clinical Relevance Hierarchy:</strong>
+        <ol>
+            <li><strong>Primary vs Recurrent:</strong> Core therapy effect - most clinically relevant</li>
+            <li><strong>Culture vs Primary:</strong> Microenvironment influence</li>
+            <li><strong>Culture vs Recurrent:</strong> Total evolution span</li>
+            <li><strong>Global trajectory:</strong> Overall progressive pattern</li>
+        </ol>
+    </div>
+")
+
 for(combo_name in names(pairwise_combos)) {
-    llm_summary <- paste0(llm_summary, sprintf("  %s (%s):\n", 
-                                                combo_name, 
-                                                paste(pairwise_combos[[combo_name]], collapse=" vs ")))
-
-    # Get significant signatures for this comparison
+    llm_html <- paste0(llm_html,
+        "<h3>", combo_name, " (", paste(pairwise_combos[[combo_name]], collapse=" vs "), ")</h3>")
+    
     combo_sigs <- sig_matrix[sig_matrix$Comparison == combo_name & sig_matrix$Is_Sig == "✓", ]
     
     if(nrow(combo_sigs) > 0) {
-        # Group by signature and count significant tests
         sig_counts <- combo_sigs %>%
             group_by(Signature) %>%
             summarise(N_Sig_Tests = n(), .groups="drop") %>%
             arrange(desc(N_Sig_Tests))
         
-        top_sigs <- head(sig_counts, 5)
+        llm_html <- paste0(llm_html,
+            "<p><strong>", nrow(sig_counts), " signatures with significant changes (", sum(sig_counts$N_Sig_Tests), " total significant tests)</strong></p>
+            <table class='stat-table'>
+                <tr><th>Signature</th><th>Test</th><th>Scoring</th><th>P-value</th></tr>")
         
-        for(j in 1:nrow(top_sigs)) {
-            sig_name <- top_sigs$Signature[j]
-            n_sig <- top_sigs$N_Sig_Tests[j]
-            
-            # Get all tests for this signature
+        for(j in 1:nrow(sig_counts)) {
+            sig_name <- sig_counts$Signature[j]
+            n_sig <- sig_counts$N_Sig_Tests[j]
             sig_tests <- combo_sigs[combo_sigs$Signature == sig_name, ]
             
-            llm_summary <- paste0(llm_summary, sprintf("    • %s (%d/8 tests significant):\n", sig_name, n_sig))
+            # Add row for signature name
+            llm_html <- paste0(llm_html,
+                "<tr style='background:#f0f0f0; font-weight:bold;'>
+                    <td colspan='4'>", sig_name, " <span class='sig-badge sig-high'>", n_sig, "/8 tests significant</span></td>
+                </tr>")
+            
+            # Add rows for each significant test
             for(k in 1:nrow(sig_tests)) {
-                llm_summary <- paste0(llm_summary,
-                    sprintf("      %s (%s): P = %s\n",
-                           sig_tests$Test[k],
-                           sig_tests$Scoring[k],
-                           safe_format(sig_tests$P_value[k])))
+                llm_html <- paste0(llm_html,
+                    "<tr>
+                        <td></td>
+                        <td>", sig_tests$Test[k], "</td>
+                        <td>", sig_tests$Scoring[k], "</td>
+                        <td>", safe_format(sig_tests$P_value[k]), " ", interpret_p(sig_tests$P_value[k]), "</td>
+                    </tr>")
             }
         }
         
-        if(nrow(sig_counts) > 5) {
-            llm_summary <- paste0(llm_summary, sprintf("    ... and %d more signatures (see matrix)\n", nrow(sig_counts) - 5))
-        }
+        llm_html <- paste0(llm_html, "</table>")
     } else {
-        llm_summary <- paste0(llm_summary, "    No significant changes detected in any test\n")
+        llm_html <- paste0(llm_html, "<p><em>No significant changes detected in any test for this comparison.</em></p>")
     }
-    llm_summary <- paste0(llm_summary, "\n")
 }
 
-llm_summary <- paste0(llm_summary,
-    "═══════════════════════════════════════════════════════════════════\n",
-    "INTERPRETATION GUIDE FOR LLM\n",
-    "═══════════════════════════════════════════════════════════════════\n",
-    "Statistical Framework:\n",
-    "  Dimension 1 (Scoring): GSVA vs Z-Score\n",
-    "  Dimension 2 (Tests): T-test, Wilcoxon, Limma-W, Limma-U\n",
-    "  Dimension 3 (Comparisons): Global trajectory + All pairwise\n",
-    sprintf("  Total tests per signature: %d\n\n", 2*4*(length(pairwise_combos)+1)),
-    
-    "Consensus Interpretation:\n",
-    "  ROBUST (Both): Significant in BOTH Z-Score AND GSVA → Highest confidence\n",
-    "  Method-specific: Significant in only one method → Moderate confidence\n",
-    "  Agreement across tests: Multiple tests significant → Robust finding\n",
-    "  Weighted vs Unweighted: Differences indicate sample quality effects\n\n",
-    
-    "Pattern Classification:\n",
-    "  Linear (monotonic): Steady progression (e.g., EMT evolution)\n",
-    "  Quadratic (spike/dip): Transient state (e.g., therapy shock)\n",
-    "  Weak trend: Suggestive but not definitive\n",
-    "  No trend: Stable across trajectory\n\n",
-    
-    "Clinical Relevance Priority:\n",
-    "  1. Primary vs Recurrent = Core therapy effect\n",
-    "  2. Culture vs Primary = Microenvironment influence\n",
-    "  3. Culture vs Recurrent = Total evolution span\n",
-    "  4. Global trajectory = Overall pattern\n\n",
-    
-    "Focus on signatures with:\n",
-    "  - ROBUST consensus (both scoring methods)\n",
-    "  - Multiple significant tests (≥3/4)\n",
-    "  - Biological relevance to GBM recurrence\n",
-    "  - Clear directional trend (increasing/decreasing)\n\n",
-    
-    "Significance Codes:\n",
-    "  *** P < 0.001 (highly significant)\n",
-    "  **  P < 0.01  (very significant)\n",
-    "  *   P < 0.05  (significant)\n",
-    "  .   P < 0.10  (trend)\n",
-    "  ns  P ≥ 0.10  (not significant)\n",
-    "═══════════════════════════════════════════════════════════════════\n"
-)
+llm_html <- paste0(llm_html, "
+</div>
 
-llm_file <- paste0(opt$out, "_llm_summary_ULTIMATE.txt")
-writeLines(llm_summary, llm_file)
-cat(sprintf("\n✓ Ultimate LLM summary: %s\n", basename(llm_file)))
+<div class='section'>
+    <h2>🎯 Interpretation Guide for AI Analysis</h2>
+    
+    <h3>Statistical Framework Overview</h3>
+    <div class='context-box'>
+        <strong>Three-Dimensional Testing Matrix:</strong>
+        <ul>
+            <li><strong>Dimension 1 (Scoring):</strong> GSVA vs Z-Score - tests robustness across methods</li>
+            <li><strong>Dimension 2 (Tests):</strong> T-test, Wilcoxon, Limma-Weighted, Limma-Unweighted - parametric vs non-parametric, weighted vs unweighted</li>
+            <li><strong>Dimension 3 (Comparisons):</strong> Global trajectory + all pairwise stages</li>
+        </ul>
+        <strong>Total analytical depth:</strong> ", 2*4*(length(pairwise_combos)+1), " tests per signature
+    </div>
+    
+    <h3>Consensus Interpretation Rules</h3>
+    <table class='stat-table'>
+        <tr><th>Evidence Level</th><th>Criteria</th><th>Confidence</th></tr>
+        <tr>
+            <td><span class='sig-badge sig-high'>ROBUST (Both)</span></td>
+            <td>Significant in BOTH Z-Score AND GSVA</td>
+            <td><strong>Highest confidence</strong> - method-independent finding</td>
+        </tr>
+        <tr>
+            <td><span class='sig-badge sig-mod'>Method-Specific</span></td>
+            <td>Significant in only one scoring method</td>
+            <td><strong>Moderate confidence</strong> - may reflect method sensitivity</td>
+        </tr>
+        <tr>
+            <td><span class='sig-badge sig-high'>Multi-Test Agreement</span></td>
+            <td>≥3 out of 4 tests significant</td>
+            <td><strong>Robust finding</strong> - test-independent</td>
+        </tr>
+        <tr>
+            <td><span class='sig-badge sig-low'>Weighted vs Unweighted Differences</span></td>
+            <td>Significance differs between weighted/unweighted</td>
+            <td>Indicates <strong>sample quality effects</strong> - interpret cautiously</td>
+        </tr>
+    </table>
+    
+    <h3>Pattern Classification Guide</h3>
+    <table class='stat-table'>
+        <tr><th>Pattern</th><th>Biological Interpretation</th><th>Example</th></tr>
+        <tr>
+            <td><strong>Linear (monotonic)</strong></td>
+            <td>Steady progression across stages</td>
+            <td>Progressive EMT, metabolic reprogramming</td>
+        </tr>
+        <tr>
+            <td><strong>Quadratic (spike/dip)</strong></td>
+            <td>Transient state at intermediate stage</td>
+            <td>Acute stress response, temporary dedifferentiation</td>
+        </tr>
+        <tr>
+            <td><strong>Weak trend</strong></td>
+            <td>direction but not definitive</td>
+            <td>May represent heterogeneous response</td>
+        </tr>
+        <tr>
+            <td><strong>No trend</strong></td>
+            <td>Stable across trajectory</td>
+            <td>Constitutive programs, housekeeping</td>
+        </tr>
+</table>
+<h3>Priority Focus Criteria</h3>
+<p>When interpreting results, prioritize signatures meeting these criteria:</p>
+<ol>
+    <li><strong>ROBUST consensus</strong> - Significant in both scoring methods</li>
+    <li><strong>Multiple significant tests</strong> - At least 3 out of 4 tests agree</li>
+    <li><strong>Biological relevance</strong> - Known involvement in GBM recurrence, therapy resistance, or stemness</li>
+    <li><strong>Clear directional trend</strong> - Consistent increasing or decreasing pattern</li>
+    <li><strong>Primary-to-Recurrent effect</strong> - Changes in the most clinically relevant comparison</li>
+</ol>
 
+<h3>Significance Codes</h3>
+<table class='stat-table'>
+    <tr><th>Code</th><th>P-value Range</th><th>Interpretation</th></tr>
+    <tr><td><code>***</code></td><td>P &lt; 0.001</td><td>Highly significant</td></tr>
+    <tr><td><code>**</code></td><td>P &lt; 0.01</td><td>Very significant</td></tr>
+    <tr><td><code>*</code></td><td>P &lt; 0.05</td><td>Significant</td></tr>
+    <tr><td><code>.</code></td><td>P &lt; 0.10</td><td>Trend/marginally significant</td></tr>
+    <tr><td><code>ns</code></td><td>P ≥ 0.10</td><td>Not significant</td></tr>
+</table>
+</div>
+<div class='section'>
+    <h2>📝 Summary for AI Interpretation</h2>
+    <div class='context-box' style='background:#d1ecf1; border-left-color:#0c5460;'>
+        <strong>This analysis provides a comprehensive, self-contained assessment of molecular subtype evolution across LITT therapy in GBM.</strong>
+        <br><br>
+        <strong>Key strengths:</strong>
+        <ul>
+            <li>Multi-method validation (GSVA + Z-Score)</li>
+            <li>Multiple statistical approaches (parametric + non-parametric)</li>
+            <li>Weighted and unweighted analyses to assess sample quality effects</li>
+            <li>Complete pairwise testing framework</li>
+            <li>All correlation values provided (no truncation)</li>
+        </ul>
+        <strong>When interpreting:</strong>
+        <ul>
+            <li>Focus on ROBUST consensus findings with multi-test agreement</li>
+            <li>Consider biological plausibility alongside statistical significance</li>
+            <li>Prioritize Primary→Recurrent changes as most clinically relevant</li>
+            <li>Use correlation matrix to identify co-regulated programs</li>
+            <li>Check for transient vs progressive patterns</li>
+        </ul>
+    </div>
+</div>
+<div style='text-align:center; margin-top:30px; padding:20px; background:#f8f9fa; border-radius:8px;'>
+    <p style='color:#666; font-size:14px; margin:0;'>
+        Generated by <strong>Global Subtypes Analysis v16.4 Ultimate Edition</strong><br>
+        ", as.character(Sys.time()), "
+    </p>
+</div>
+</body>
+</html>")
+# Write HTML file with _mqc suffix for MultiQC integration
+llm_html_file <- paste0(opt$out, "_llm_summary_ULTIMATE_mqc.html")
+writeLines(llm_html, llm_html_file)
+cat(sprintf("\n✓ Ultimate LLM summary (HTML): %s\n", basename(llm_html_file)))
 # ==============================================================================
 # 12. HTML REPORT
 # ==============================================================================
 cat("LOG [12/13]: Generating HTML Report...\n")
-
 summary_html <- paste0(dirname(opt$out), "/analysis_summary_mqc.html")
 sink(summary_html)
-
 cat("
 <div style='background-color:#f8f9fa; padding:20px; border:2px solid #667eea; border-radius:8px;'>
     <h2 style='color:#667eea;'>🧬 Litt Therapy Subtype Evolution - ULTIMATE ANALYSIS v16.4</h2>
+<div style='background:#d1ecf1; border-left:4px solid#0c5460; padding:10px; margin:15px 0;'>
+<strong>🆕 v16.4 ULTIMATE FEATURES:</strong><br>
+✓ Complete integration of v16.2 enhanced LLM reporting<br>
+✓ Complete integration of v16.3 comprehensive 2×4×N matrix<br>
+✓ Professional significance heatmap with checkmarks (✓/✗)<br>
+✓ All correlation values in HTML report (no truncation)<br>
+✓ Complete PCA components with gene drivers<br>
+✓ Full pairwise testing framework<br>
+✓ <strong>Self-contained HTML interpretation guide for AI analysis</strong>
+</div>
 
-    <div style='background:#d1ecf1; border-left:4px solid#0c5460; padding:10px; margin:15px 0;'>
-    <strong>🆕 v16.4 ULTIMATE FEATURES:</strong><br>
-    ✓ Complete integration of v16.2 enhanced LLM reporting<br>
-    ✓ Complete integration of v16.3 comprehensive 2×4×N matrix<br>
-    ✓ Professional significance heatmap with checkmarks (✓/✗)<br>
-    ✓ All correlation values in LLM summary<br>
-    ✓ PCA gene drivers, plasticity statistics, trajectory patterns<br>
-    ✓ Full pairwise testing framework
-    </div>
+<h3>Analysis Framework</h3>
+<table style='border-collapse:collapse; width:100%; margin:15px 0;'>
+    <tr style='background:#667eea; color:white;'>
+        <th style='padding:8px; border:1px solid #555;'>Component</th>
+        <th style='padding:8px; border:1px solid #555;'>Details</th>
+    </tr>
+    <tr><td style='padding:8px; border:1px solid #ddd;'><strong>Scoring Methods</strong></td>
+        <td style='padding:8px; border:1px solid #ddd;'>GSVA + Z-Score (dual approach)</td></tr>
+    <tr><td style='padding:8px; border:1px solid #ddd;'><strong>Plasticity Tests</strong></td>
+        <td style='padding:8px; border:1px solid #ddd;'>Shapiro-Wilk, ANOVA, Kruskal-Wallis, Limma-W, Limma-U</td></tr>
+    <tr><td style='padding:8px; border:1px solid #ddd;'><strong>Trajectory Tests</strong></td>
+        <td style='padding:8px; border:1px solid #ddd;'>Global JT + ", length(pairwise_combos), " Pairwise × 4 tests</td></tr>
+    <tr><td style='padding:8px; border:1px solid #ddd;'><strong>Total Tests/Signature</strong></td>
+        <td style='padding:8px; border:1px solid #ddd;'><strong>", 2*4*(length(pairwise_combos)+1), "</strong></td></tr>
+</table>
 
-    <h3>Analysis Framework</h3>
-    <table style='border-collapse:collapse; width:100%; margin:15px 0;'>
-        <tr style='background:#667eea; color:white;'>
-            <th style='padding:8px; border:1px solid #555;'>Component</th>
-            <th style='padding:8px; border:1px solid #555;'>Details</th>
-        </tr>
-        <tr><td style='padding:8px; border:1px solid #ddd;'><strong>Scoring Methods</strong></td>
-            <td style='padding:8px; border:1px solid #ddd;'>GSVA + Z-Score (dual approach)</td></tr>
-        <tr><td style='padding:8px; border:1px solid #ddd;'><strong>Plasticity Tests</strong></td>
-            <td style='padding:8px; border:1px solid #ddd;'>Shapiro-Wilk, ANOVA, Kruskal-Wallis, Limma-W, Limma-U</td></tr>
-        <tr><td style='padding:8px; border:1px solid #ddd;'><strong>Trajectory Tests</strong></td>
-            <td style='padding:8px; border:1px solid #ddd;'>Global JT + ", length(pairwise_combos), " Pairwise × 4 tests</td></tr>
-        <tr><td style='padding:8px; border:1px solid #ddd;'><strong>Total Tests/Signature</strong></td>
-            <td style='padding:8px; border:1px solid #ddd;'><strong>", 2*4*(length(pairwise_combos)+1), "</strong></td></tr>
-    </table>
+<h3>Dataset Overview</h3>
+<pre>", paste(names(group_sizes), ":", group_sizes, collapse="\n"), "</pre>
 
-    <h3>Dataset Overview</h3>
-    <pre>", paste(names(group_sizes), ":", group_sizes, collapse="\n"), "</pre>
-    
-    <h3>Global Structure</h3>
-    <ul>
-        <li><strong>PERMANOVA:</strong> R²=", sprintf("%.3f", perm_r2), " (", sprintf("%.1f", perm_r2*100), 
-            "% variance explained), P=", safe_format(perm_p), " ", interpret_p(perm_p), "</li>
-        <li><strong>PCA:</strong> PC1=", var_pc[1], "%, PC2=", var_pc[2], "%, Total=", cum_var[2], "%</li>
-    </ul>
-    
-    <h3>Scoring Method Agreement</h3>
-    <ul>
-        <li><strong>GSVA vs Z-Score correlation:</strong> r=", sprintf("%.3f", cor_methods), 
-            " (", if(cor_methods > 0.8) "High agreement" else if(cor_methods > 0.6) "Moderate agreement" else "Low agreement", ")</li>
-    </ul>
+<h3>Global Structure</h3>
+<ul>
+    <li><strong>PERMANOVA:</strong> R²=", sprintf("%.3f", perm_r2), " (", sprintf("%.1f", perm_r2*100),
+        "% variance explained), P=", safe_format(perm_p), " ", interpret_p(perm_p), "</li>
+    <li><strong>PCA:</strong> PC1=", var_pc[1], "%, PC2=", var_pc[2], "%, Total=", cum_var[2], "%</li>
+</ul>
 
-    <h3>Plasticity Analysis (2×4 Matrix)</h3>
-    <p>All ", nrow(plasticity_matrix), " tests shown in comprehensive matrix CSV</p>
-    <p><strong>Recommendation:</strong> ", 
-    if(n_total < 30 || shapiro_p_zscore < 0.05) {
-        sprintf("Use <strong>Kruskal-Wallis</strong> (N=%d, data is %s)", 
-                n_total, if(shapiro_p_zscore < 0.05) "non-normal" else "small sample")
-    } else {
-        sprintf("Use <strong>ANOVA</strong> (N=%d, data is normally distributed)", n_total)
-    },
-    "</p>
+<h3>Scoring Method Agreement</h3>
+<ul>
+    <li><strong>GSVA vs Z-Score correlation:</strong> r=", sprintf("%.3f", cor_methods),
+        " (", if(cor_methods > 0.8) "High agreement" else if(cor_methods > 0.6) "Moderate agreement" else "Low agreement", ")</li>
+</ul>
 
-    <h3>Trajectory Pattern Summary</h3>
-    <table style='border-collapse:collapse; width:100%;'>
-        <tr style='background:#667eea; color:white;'>
-            <th style='padding:8px;'>Pattern</th>
-            <th style='padding:8px;'>Count</th>
-        </tr>
+<h3>Plasticity Analysis (2×4 Matrix)</h3>
+<p>All ", nrow(plasticity_matrix), " tests shown in comprehensive matrix CSV</p>
+<p><strong>Recommendation:</strong> ",
+if(n_total < 30 || shapiro_p_zscore < 0.05) {
+    sprintf("Use <strong>Kruskal-Wallis</strong> (N=%d, data is %s)",
+            n_total, if(shapiro_p_zscore < 0.05) "non-normal" else "small sample")
+} else {
+    sprintf("Use <strong>ANOVA</strong> (N=%d, data is normally distributed)", n_total)
+},
+"</p>
+
+<h3>Trajectory Pattern Summary</h3>
+<table style='border-collapse:collapse; width:100%;'>
+    <tr style='background:#667eea; color:white;'>
+        <th style='padding:8px;'>Pattern</th>
+        <th style='padding:8px;'>Count</th>
+    </tr>
 ")
-
 pattern_table <- table(trajectory_results$Pattern)
 for(pattern in names(pattern_table)) {
-    cat(sprintf("<tr><td style='padding:8px;'>%s</td><td style='padding:8px;'>%d</td></tr>\n",
-               pattern, pattern_table[pattern]))
+cat(sprintf("<tr><td style='padding:8px;'>%s</td><td style='padding:8px;'>%d</td></tr>\n",
+pattern, pattern_table[pattern]))
 }
-
 cat("    </table>
-
-    <h3>Consensus Trends</h3>
-    <table style='border-collapse:collapse; width:100%;'>
-        <tr style='background:#667eea; color:white;'>
-            <th style='padding:8px;'>Consensus</th>
-            <th style='padding:8px;'>Count</th>
-        </tr>
+<h3>Consensus Trends</h3>
+<table style='border-collapse:collapse; width:100%;'>
+    <tr style='background:#667eea; color:white;'>
+        <th style='padding:8px;'>Consensus</th>
+        <th style='padding:8px;'>Count</th>
+    </tr>
 ")
-
 consensus_table <- table(trajectory_results$Consensus_Trend)
 for(cons in names(consensus_table)) {
-    cat(sprintf("<tr><td style='padding:8px;'>%s</td><td style='padding:8px;'>%d</td></tr>\n",
-               cons, consensus_table[cons]))
+cat(sprintf("<tr><td style='padding:8px;'>%s</td><td style='padding:8px;'>%d</td></tr>\n",
+cons, consensus_table[cons]))
 }
-
 cat("    </table>
-
-    <h3>Key Pairwise Comparisons</h3>
-    <table style='border-collapse:collapse; width:100%;'>
-        <tr style='background:#667eea; color:white;'>
-            <th style='padding:8px;'>Comparison</th>
-            <th style='padding:8px;'>Groups</th>
-        </tr>
+<h3>Key Pairwise Comparisons</h3>
+<table style='border-collapse:collapse; width:100%;'>
+    <tr style='background:#667eea; color:white;'>
+        <th style='padding:8px;'>Comparison</th>
+        <th style='padding:8px;'>Groups</th>
+    </tr>
 ")
-
 for(combo_name in names(pairwise_combos)) {
-    cat(sprintf("        <tr><td style='padding:8px; border:1px solid #ddd;'>%s</td>
-            <td style='padding:8px; border:1px solid #ddd;'>%s</td></tr>\n",
-            combo_name, paste(pairwise_combos[[combo_name]], collapse=" vs ")))
+cat(sprintf("        <tr><td style='padding:8px; border:1px solid #ddd;'>%s</td>
+<td style='padding:8px; border:1px solid #ddd;'>%s</td></tr>\n",
+combo_name, paste(pairwise_combos[[combo_name]], collapse=" vs ")))
 }
-
 cat("    </table>
 </div>
-
 <div style='background:#e7f3ff; padding:20px; border:2px solid #667eea; border-radius:8px; margin-top:20px;'>
-    <h2 style='color:#667eea;'>📄 Ultimate LLM Interpretation Summary</h2>
+    <h2 style='color:#667eea;'>📄 Complete AI-Ready Interpretation Guide</h2>
     <p style='color:#666; font-size:13px;'>
-    <strong>Complete Analysis Summary:</strong> Includes PCA components, plasticity statistics, 
-    all correlations, trajectory patterns, and comprehensive pairwise testing results.<br>
-    <strong>File:</strong> <code>", basename(llm_file), "</code><br>
-    <strong>Purpose:</strong> Copy into ChatGPT/Claude/Gemini for biological interpretation
+    <strong>✨ NEW IN v16.4:</strong> Complete self-contained HTML report with:<br>
+    ✓ All PCA components and gene drivers<br>
+    ✓ Complete correlation matrix (all ", (nrow(sig_cor)*(nrow(sig_cor)-1))/2, " pairs)<br>
+    ✓ Comprehensive plasticity statistics<br>
+    ✓ Full trajectory patterns and consensus results<br>
+    ✓ Detailed pairwise comparison results<br>
+    ✓ Biological interpretation guide<br>
+    ✓ Statistical framework documentation<br><br>
+    <strong>File:</strong> <code>", basename(llm_html_file), "</code><br>
+    <strong>Purpose:</strong> Open directly in browser or copy into ChatGPT/Claude/Gemini for biological interpretation<br>
+    <strong>No external files needed:</strong> All data is self-contained in this HTML report
+    </p>
+    <p style='margin-top:15px; padding:10px; background:white; border-radius:5px;'>
+    <strong>🔗 Click to open:</strong> <a href='", basename(llm_html_file), "' target='_blank' 
+    style='color:#667eea; font-weight:bold; text-decoration:none;'>", basename(llm_html_file), "</a>
     </p>
 </div>
-
 <div style='background:#fff; padding:15px; border:1px solid #ddd; border-radius:5px; margin-top:20px;'>
     <h3>📊 Generated Files</h3>
     <ul>
+        <li><code>", basename(llm_html_file), "</code> - <strong>✨ Complete AI interpretation guide (HTML)</strong></li>
         <li><code>", basename(paste0(opt$out, "_Significance_Matrix_Heatmap_mqc.png")), "</code> - Visual significance matrix</li>
         <li><code>", basename(paste0(opt$out, "_Significance_Matrix_Full.csv")), "</code> - Complete test results</li>
         <li><code>", basename(paste0(opt$out, "_Trajectory_Comprehensive_ALL_Tests.csv")), "</code> - All trajectory tests</li>
         <li><code>", basename(paste0(opt$out, "_Plasticity_Comprehensive_Matrix.csv")), "</code> - Plasticity 2×4 matrix</li>
         <li><code>", basename(paste0(opt$out, "_Signature_Correlation_Matrix_FULL.csv")), "</code> - Complete correlation matrix</li>
-        <li><code>", basename(llm_file), "</code> - Ultimate LLM summary</li>
     </ul>
 </div>
-
 <div style='background:#fff; padding:15px; border:1px solid #ddd; border-radius:5px; margin-top:20px;'>
     <h3>Statistical Methods Summary</h3>
     <ul>
@@ -1545,7 +1849,7 @@ cat("    </table>
                 <li>Non-parametric: Kruskal-Wallis</li>
             </ul>
         </li>
-        <li><strong>Trajectory:</strong> 
+        <li><strong>Trajectory:</strong>
             <ul>
                 <li>Global monotonic trend: Jonckheere-Terpstra (1000 permutations)</li>
                 <li>Pairwise comparisons: T-test, Wilcoxon, Limma-W, Limma-U</li>
@@ -1553,43 +1857,40 @@ cat("    </table>
             </ul>
         </li>
         <li><strong>Multiple Testing:</strong> Benjamini-Hochberg FDR correction</li>
-        <li><strong>Software:</strong> R ", as.character(R.version.string), 
-        ", limma ", as.character(packageVersion("limma")), 
-        ", clinfun ", as.character(packageVersion("clinfun")), 
+        <li><strong>Software:</strong> R ", as.character(R.version.string),
+        ", limma ", as.character(packageVersion("limma")),
+        ", clinfun ", as.character(packageVersion("clinfun")),
         ", GSVA ", as.character(packageVersion("GSVA")), "</li>
     </ul>
 </div>
-
 <p style='text-align:center; margin-top:20px; color:#666; font-size:12px;'>
 Generated by <strong>v16.4 Ultimate Edition</strong> | ", as.character(Sys.time()), "
 </p>
 ")
-
 sink()
-
 # ==============================================================================
 # 13. EXPORT ALL DATA FILES
 # ==============================================================================
 cat("LOG [13/13]: Exporting Data Files...\n")
-
 write.csv(t(final_scores), paste0(opt$out, "_Scores.csv"))
 write.csv(t(z_res), paste0(opt$out, "_ZScores.csv"))
 write.csv(t(gsva_res), paste0(opt$out, "_GSVA_Scores.csv"))
 write.csv(meta, paste0(opt$out, "_Metadata.csv"))
-write.csv(res_weighted$weights, paste0(opt$out, "_Weights_Weighted.csv"), row.names=FALSE)
+write.csv(res_weighted$weights, paste0(opt$out, "_Weights_Weighted.csv"), row.names=FALSE); 
 write.csv(res_unweighted$weights, paste0(opt$out, "_Weights_Unweighted.csv"), row.names=FALSE)
 
 writeLines(capture.output(sessionInfo()), paste0(dirname(opt$out), "/sessionInfo.txt"))
-
 cat("\n╔═══════════════════════════════════════════════╗\n")
 cat("║     ANALYSIS COMPLETE - v16.4 ULTIMATE        ║\n")
 cat("╚═══════════════════════════════════════════════╝\n\n")
 cat("✓ v16.2 Enhanced LLM reporting INTEGRATED\n")
 cat("✓ v16.3 Comprehensive 2×4×N matrix INTEGRATED\n")
-cat("✓ PCA gene drivers, plasticity stats, correlations\n")
+cat("✓ Complete HTML interpretation guide with ALL data\n")
+cat("✓ All PCA components, correlations, statistics included\n")
+cat("✓ No external file references - fully self-contained\n")
 cat("✓ Professional significance heatmap generated\n")
-cat(sprintf("✓ Total tests per signature: %d\n", 2*4*(length(pairwise_combos)+1)))
+cat(sprintf("✓ Total tests per signature: %d\n", 8 * (length(pairwise_combos) + 1)))
 cat(sprintf("✓ Trajectory patterns: %s\n", paste(names(pattern_table), "=", pattern_table, collapse=", ")))
 cat(sprintf("✓ Consensus trends: %s\n", paste(names(consensus_table), "=", consensus_table, collapse=", ")))
 cat(sprintf("\n📊 Significance matrix: %s\n", basename(paste0(opt$out, "_Significance_Matrix_Heatmap_mqc.png"))))
-cat(sprintf("📝 Ultimate LLM summary: %s\n\n", basename(llm_file)))
+cat(sprintf("📝 Ultimate HTML guide: %s\n\n", basename(llm_html_file)))
