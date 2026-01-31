@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # ==============================================================================
-# U251 EVOLUTIONARY ANALYSIS WITH MULTI-FDR SENSITIVITY
+# U251 EVOLUTIONARY ANALYSIS - ULTIMATE EDITION v16.4
 # ==============================================================================
 
 echo "========================================"
 echo "U251 Transcriptomic Evolution Analysis"
-echo "with Multi-FDR Sensitivity Testing"
+echo "Ultimate Edition v16.4"
 echo "========================================"
 date
 
@@ -81,8 +81,12 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo "========================================"
-echo "Running Multi-FDR Sensitivity Analysis"
-echo "Testing at α = 0.05, 0.01, 0.005, 0.001"
+echo "Running Ultimate Analysis v16.4"
+echo "Features:"
+echo "  • 2×4×N Statistical Matrix"
+echo "  • Comprehensive Pairwise Testing"
+echo "  • Enhanced LLM Summary (embedded)"
+echo "  • Professional Significance Heatmap"
 echo "========================================"
 
 singularity exec --bind $PWD:/data --pwd /data "$IMG_PATH" \
@@ -106,37 +110,45 @@ echo "Generating MultiQC Report..."
 echo "========================================"
 
 cat > mqc_config_subtypes.yaml << 'CONFIG_EOF'
-title: "U251 Global Evolution: Multi-FDR Sensitivity Report"
-subtitle: "Transcriptomic Evolution with Multiple Statistical Stringency Levels"
+title: "U251 Global Evolution: Ultimate Analysis v16.4"
+subtitle: "Comprehensive Transcriptomic Evolution with 2×4×N Statistical Matrix"
 intro_text: |
-  This report presents a comprehensive multi-FDR sensitivity analysis of U251 
-  glioblastoma transcriptomic evolution. Due to small sample sizes (n=1-3 per group), 
-  results are shown at four FDR thresholds (α=0.05, 0.01, 0.005, 0.001) to balance 
-  discovery and false positive control.
-  
-  **Recommended Interpretation:** Focus on signatures significant at α≤0.01 and 
-  validate findings with orthogonal experimental methods.
+  This report presents the ultimate comprehensive analysis of U251 glioblastoma 
+  transcriptomic evolution across Culture → Primary → Recurrent stages.
+
+  **Key Features:**
+  - 2×4×N Statistical Framework (GSVA/Z-Score × 4 Tests × All Comparisons)
+  - Professional significance matrix with visual heatmap
+  - Complete correlation analysis (all signature pairs)
+  - Enhanced LLM interpretation summary (embedded in report)
+  - PCA gene drivers and plasticity statistics
+  - Jonckheere-Terpstra trajectory testing with consensus
+
+  **Statistical Rigor:** Multiple testing correction (FDR), dual scoring methods,
+  parametric and non-parametric tests, weighted and unweighted approaches.
 
 report_header_info:
-  - Pipeline Version: "v12.0 (Multi-FDR)"
-  - FDR Thresholds Tested: "0.05, 0.01, 0.005, 0.001"
+  - Pipeline Version: "v16.4 Ultimate Edition"
+  - Statistical Framework: "2×4×N Matrix"
+  - Scoring Methods: "GSVA + Z-Score"
+  - Trajectory Testing: "Jonckheere-Terpstra + Polynomial"
 
 custom_content:
   order:
-    - fdr_sensitivity
-    - subtype_stats_fdr_0001
-    - subtype_stats_fdr_0005  
-    - subtype_stats_fdr_001
-    - subtype_stats_fdr_005
     - analysis_summary
+    - significance_matrix
+    - trajectory_tests
+    - plasticity_matrix
+    - global_structure
+    - method_agreement
 
 extra_fn_clean_exts:
   - "_mqc"
 
 table_columns_visible:
-  fdr_sensitivity:
+  significance_matrix:
     all_columns: true
-  subtype_stats_fdr_005:
+  plasticity_matrix:
     all_columns: true
 
 CONFIG_EOF
@@ -155,7 +167,7 @@ singularity exec --bind $PWD:/data --pwd /data "$MULTIQC_IMG" multiqc \
     "$OUT_DIR" \
     --force \
     --config mqc_config_subtypes.yaml \
-    --filename "U251_Multi_FDR_Sensitivity_Report.html" \
+    --filename "U251_Ultimate_Analysis_v16.4.html" \
     --outdir "$OUT_DIR" || {
         echo "ERROR: MultiQC failed"
         exit 1
@@ -169,29 +181,33 @@ echo "✓ MultiQC report generated successfully"
 # ------------------------------------------------------------------------------
 echo ""
 echo "========================================"
-echo "MULTI-FDR ANALYSIS COMPLETE"
+echo "ULTIMATE ANALYSIS v16.4 COMPLETE"
 echo "========================================"
 echo ""
 echo "Primary Output:"
-echo "  📊 Report: ${OUT_DIR}/U251_Multi_FDR_Sensitivity_Report.html"
+echo "  📊 Report: ${OUT_DIR}/U251_Ultimate_Analysis_v16.4.html"
+echo "  📄 LLM Summary: ${OUTPUT_PREFIX}_llm_summary_ULTIMATE.txt"
 echo ""
-echo "Statistics Tables (by FDR threshold):"
-ls -1 ${OUT_DIR}/fdr_*_stats_mqc.tsv 2>/dev/null | while read file; do
-    echo "  - $(basename $file)"
-done
+echo "Key Data Files:"
+echo "  • Significance Matrix (Full): ${OUTPUT_PREFIX}_Significance_Matrix_Full.csv"
+echo "  • Trajectory Tests (All): ${OUTPUT_PREFIX}_Trajectory_Comprehensive_ALL_Tests.csv"
+echo "  • Plasticity Matrix (2×4): ${OUTPUT_PREFIX}_Plasticity_Comprehensive_Matrix.csv"
+echo "  • Correlation Matrix (Complete): ${OUTPUT_PREFIX}_Signature_Correlation_Matrix_FULL.csv"
 echo ""
-echo "Data Exports:"
-ls -1 ${OUTPUT_PREFIX}*.csv 2>/dev/null | while read file; do
-    echo "  - $(basename $file)"
-done
-echo ""
-echo "Figures:"
-ls -1 ${OUTPUT_PREFIX}*.png 2>/dev/null | while read file; do
-    echo "  - $(basename $file)"
+echo "Visualizations:"
+ls -1 ${OUTPUT_PREFIX}*_mqc.png 2>/dev/null | while read file; do
+    echo "  • $(basename $file)"
 done
 echo ""
 echo "Session Info: ${OUT_DIR}/sessionInfo.txt"
 echo ""
+echo "========================================"
+echo "Next Steps:"
+echo "  1. Open HTML report in browser"
+echo "  2. Review embedded LLM summary section"
+echo "  3. Copy LLM summary to ChatGPT/Claude for interpretation"
+echo "  4. Examine significance matrix heatmap"
+echo "  5. Check trajectory consensus trends"
 echo "========================================"
 date
 echo "Analysis completed successfully!"
