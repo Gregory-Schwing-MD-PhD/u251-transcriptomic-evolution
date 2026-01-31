@@ -160,4 +160,9 @@ RUN R -e "BiocManager::install('pathview')"
 # ------------------------------------------------------------------------------
 RUN R -e "BiocManager::install('ReactomePA')"
 
+# ------------------------------------------------------------------------------
+# # LAYER 22: XML Parsing for DrugBank API (NEW IN V6)
+# # ------------------------------------------------------------------------------
+RUN R -e "install.packages('xml2', repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
