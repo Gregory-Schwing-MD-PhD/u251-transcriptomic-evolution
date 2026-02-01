@@ -1,16 +1,18 @@
 #!/usr/bin/env Rscript
 # ==============================================================================
-# PUBLICATION FIGURE GENERATOR - 9-PANEL (A-I) - COMPLETE FIX V2
+# PUBLICATION FIGURE GENERATOR - 9-PANEL (A-I) - FINAL V3
 # ==============================================================================
 # ALL FIXES APPLIED:
-# - ✅ RESTORED ChEMBL API connection (was completely missing!)
-# - ✅ BBB scoring with proper decimal precision (0.0 start, not 0)
-# - ✅ Clinical trials from fallback database
-# - ✅ Tree plot font reduced for readability (fontsize 2, cladelab 4)
-# - ✅ Table panel as proper ggplot figure with 20 drugs, full size
-# - ✅ Significance markers FIXED - proper midpoint calculation
-# - ✅ Pathway color scheme more distinct (viridis)
+# - ✅ ChEMBL API connection restored
+# - ✅ BBB scoring decimal precision fixed
+# - ✅ Significance markers ABOVE trajectory line (dynamic positioning)
+# - ✅ Tree plot smaller font (2, 4)
+# - ✅ Table as ggplot with 20 drugs, proper sizing
+# - ✅ Pathway color scheme more distinct (viridis plasma)
 # - ✅ Legends added back for PPI and Polypharmacology
+# - ✅ ALL FONT SIZES INCREASED (axes, titles, subtitles, legends, captions)
+# - ✅ Drug plot labels BLACK and larger subtitle
+# - ✅ ALL PANEL LABELS (A-I) VISIBLE AND IN FOREGROUND
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -53,7 +55,7 @@ GSEA_MIN_SIZE <- 15
 GSEA_MAX_SIZE <- 500
 BBB_SCORE_THRESHOLD <- 0.5
 CACHE_DIR <- ".drug_discovery_cache"
-TOP_DRUGS_DISPLAY <- 20  # Increased from 15
+TOP_DRUGS_DISPLAY <- 20
 
 GROUP_COLORS <- c("Culture_U2" = "#1f77b4", "Primary_U2" = "#ff7f0e", "Recurrent_U2" = "#d62728")
 GROUP_SHAPES <- c("Culture_U2" = 21, "Primary_U2" = 24, "Recurrent_U2" = 22)
@@ -61,11 +63,15 @@ GROUP_SHAPES <- c("Culture_U2" = 21, "Primary_U2" = 24, "Recurrent_U2" = 22)
 # ==============================================================================
 # UTILITY FUNCTIONS
 # ==============================================================================
-theme_publication <- function(base_size = 10) {
+theme_publication <- function(base_size = 14) {  # Increased from 10 to 14
     theme_bw(base_size = base_size) +
         theme(panel.grid.minor = element_blank(),
-              plot.title = element_text(face = "bold", size = rel(1.1)),
-              plot.subtitle = element_text(color = "grey40", size = rel(0.85)),
+              plot.title = element_text(face = "bold", size = rel(1.3)),  # Increased
+              plot.subtitle = element_text(color = "grey40", size = rel(1.0)),  # Increased
+              axis.title = element_text(size = rel(1.1)),  # Increased
+              axis.text = element_text(size = rel(0.9)),  # Increased
+              legend.title = element_text(size = rel(1.0)),  # Increased
+              legend.text = element_text(size = rel(0.9)),  # Increased
               legend.position = "bottom")
 }
 
@@ -113,7 +119,7 @@ init_cache <- function() {
 }
 
 # ==============================================================================
-# RESTORED API LOGIC (From v6_SUPREME)
+# RESTORED API LOGIC
 # ==============================================================================
 
 get_cached <- function(key) {
@@ -208,7 +214,7 @@ predict_bbb_penetration <- function(chembl_data) {
         return(list(bbb_score = NA, bbb_prediction = "Unknown", rationale = "No molecular data"))
     }
     
-    score <- 0.0  # CRITICAL: Decimal start
+    score <- 0.0
     rationale <- c()
     
     mw <- if(!is.null(chembl_data$molecular_weight)) as.numeric(chembl_data$molecular_weight) else NA
@@ -372,7 +378,7 @@ if (!file.exists(img_path)) stop("Experiment_Visual_Abstract.png not found")
 img <- image_read(img_path)
 p_panel_a <- ggdraw() + 
     draw_image(img) +
-    draw_label("A", x = 0.02, y = 0.98, fontface = "bold", size = 20, color = "black")
+    draw_label("A", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
 
 # ==============================================================================
 # PANEL B: GLOBAL STRUCTURE WITH TRAJECTORY ARROWS
@@ -393,7 +399,7 @@ p_scree <- ggplot(scree_df, aes(x = PC, y = Var)) +
     geom_line(aes(group = 1), color = "darkblue", linewidth = 0.8) +
     geom_point(color = "darkblue", size = 2) +
     labs(y = "% Variance", x = NULL) +
-    theme_publication(base_size = 9)
+    theme_publication(base_size = 11)
 
 loadings <- pca$rotation
 top_genes_load <- loadings[order(sqrt(loadings[, "PC1"]^2 + loadings[, "PC2"]^2), decreasing = TRUE)[1:8], c("PC1", "PC2")]
@@ -426,22 +432,22 @@ p_pca <- ggplot(pcaData, aes(x = PC1, y = PC2)) +
     geom_segment(data = gene_arrows, aes(x = 0, y = 0, xend = PC1, yend = PC2),
                  arrow = arrow(length = unit(0.15, "cm")), color = "red", alpha = 0.5, inherit.aes = FALSE) +
     geom_text_repel(data = gene_arrows, aes(x = PC1, y = PC2, label = Gene),
-                    color = "red", size = 2.5, segment.alpha = 0.3, max.overlaps = 20) +
+                    color = "red", size = 3, segment.alpha = 0.3, max.overlaps = 20) +
     geom_point(aes(fill = Class, shape = Class), size = 5, color = "black", stroke = 0.5) +
     scale_fill_manual(values = GROUP_COLORS) +
     scale_shape_manual(values = GROUP_SHAPES) +
     labs(x = paste0("PC1 (", var_pc[1], "%)"), y = paste0("PC2 (", var_pc[2], "%)"),
          title = "Evolutionary Trajectory") +
-    theme_publication(base_size = 9)
+    theme_publication(base_size = 11)
 
 p_panel_b <- ((p_pca | p_scree) + plot_layout(widths = c(2.5, 1))) +
     plot_annotation(tag_levels = list(c("B"))) &
-    theme(plot.tag = element_text(face = "bold", size = 20))
+    theme(plot.tag = element_text(face = "bold", size = 24))
 
 # ==============================================================================
-# PANEL C: TRAJECTORY WITH FIXED SIGNIFICANCE MARKERS
+# PANEL C: TRAJECTORY WITH SIGNIFICANCE MARKERS ABOVE LINE
 # ==============================================================================
-cat("Panel C: Creating trajectory with FIXED significance markers...\n")
+cat("Panel C: Creating trajectory with significance markers ABOVE line...\n")
 
 sigs <- list(
     "Verhaak_Classical" = c("EGFR", "NES", "NOTCH3", "JAG1", "HES5", "AKT2"),
@@ -528,7 +534,7 @@ traj_summary <- traj_data %>%
 traj_summary$Signature_Full <- expand_subtype_name(traj_summary$Signature)
 traj_data$Signature_Full <- expand_subtype_name(traj_data$Signature)
 
-# FIXED: Better significance annotation logic
+# FIXED: Position markers just above the trajectory line
 sig_annotations <- data.frame()
 
 for (sig in unique(traj_summary$Signature)) {
@@ -540,13 +546,11 @@ for (sig in unique(traj_summary$Signature)) {
         filter(Signature == sig) %>%
         arrange(Stage)
     
-    # Only add markers for ADJACENT comparisons (not all pairwise)
     if(nrow(sig_means) >= 2) {
         for(i in 1:(nrow(sig_means)-1)) {
             stage1 <- as.character(sig_means$Stage[i])
             stage2 <- as.character(sig_means$Stage[i+1])
             
-            # Find the contrast for these adjacent stages
             contrast_pattern1 <- paste0(gsub("[^A-Za-z0-9]", "", stage2), "_vs_", gsub("[^A-Za-z0-9]", "", stage1))
             contrast_pattern2 <- paste0(gsub("[^A-Za-z0-9]", "", stage1), "_vs_", gsub("[^A-Za-z0-9]", "", stage2))
             
@@ -559,9 +563,12 @@ for (sig in unique(traj_summary$Signature)) {
                     mean1 <- sig_means$Mean[i]
                     mean2 <- sig_means$Mean[i+1]
                     
-                    # Position at the MIDPOINT between adjacent stages
+                    # Calculate the interpolated point on the line at x_mid
                     x_mid <- i + 0.5
-                    y_pos <- max(mean1, mean2) + 0.4
+                    y_line <- (mean1 + mean2) / 2  # Midpoint of line
+                    
+                    # Position just above the line
+                    y_pos <- y_line + 0.15  # Small offset above line
                     
                     asterisks <- if(p_val < 0.001) "***" else if(p_val < 0.01) "**" else "*"
                     
@@ -592,11 +599,11 @@ p_panel_c <- ggplot(traj_data, aes(x = Stage, y = Score)) +
     scale_color_brewer(palette = "Set1", guide = "none") +
     scale_shape_manual(values = GROUP_SHAPES, name = "Stage") +
     labs(x = "Stage", y = "Z-Score") +
-    theme_publication(base_size = 8) +
+    theme_publication(base_size = 10) +
     theme(legend.position = "bottom", 
-          strip.text = element_text(size = 7),
+          strip.text = element_text(size = 9),
           axis.text.x = element_text(angle = 45, hjust = 1),
-          plot.tag = element_text(face = "bold", size = 20)) +
+          plot.tag = element_text(face = "bold", size = 24)) +
     plot_annotation(tag_levels = list(c("C")))
 
 if(nrow(sig_annotations) > 0) {
@@ -604,7 +611,7 @@ if(nrow(sig_annotations) > 0) {
         geom_text(data = sig_annotations,
                  aes(x = x, y = y, label = label),
                  inherit.aes = FALSE,
-                 size = 4, fontface = "bold", color = "black")
+                 size = 5, fontface = "bold", color = "black")
 }
 
 # ==============================================================================
@@ -632,19 +639,22 @@ if (!is.null(gsea_combined) && nrow(gsea_combined) > 0) {
                           fontsize_cladelab = 4,
                           fontsize = 2) +
         hexpand(.35) +
-        theme(plot.tag = element_text(face = "bold", size = 20)) +
-        plot_annotation(tag_levels = list(c("D")))
+        theme(plot.tag = element_text(face = "bold", size = 24))
+    
+    # Add label manually in foreground
+    p_panel_d <- ggdraw(p_panel_d) +
+        draw_label("D", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
 } else {
     pathway_results <- NULL
     p_panel_d <- ggplot() + 
-        annotate("text", x = 0.5, y = 0.5, label = "No pathways enriched", size = 6) +
+        annotate("text", x = 0.5, y = 0.5, label = "No pathways enriched", size = 8) +
         theme_void() +
-        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        theme(plot.tag = element_text(face = "bold", size = 24)) +
         plot_annotation(tag_levels = list(c("D")))
 }
 
 # ==============================================================================
-# DRUG DISCOVERY (WITH RESTORED API)
+# DRUG DISCOVERY
 # ==============================================================================
 cat("Running drug discovery analysis...\n")
 
@@ -757,23 +767,28 @@ if(length(mapped_ids) >= 5) {
             scale_color_manual(values=c("Hub"="#E41A1C", "Node"="#377EB8"), name="Type") +
             scale_size_manual(values=c("Hub"=4, "Node"=2), name="Type") +
             geom_node_text(aes(label=ifelse(type=="Hub", name, "")),
-                          repel=TRUE, fontface="bold", size=3, color="black") +
+                          repel=TRUE, fontface="bold", size=4, color="black") +
             theme_void() +
             labs(title = "PPI Network") +
-            theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+            theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
                   legend.position = "bottom",
-                  plot.tag = element_text(face = "bold", size = 20)) +
-            plot_annotation(tag_levels = list(c("E")))
+                  legend.text = element_text(size = 12),
+                  legend.title = element_text(size = 13),
+                  plot.tag = element_text(face = "bold", size = 24))
+        
+        # Add label in foreground
+        p_panel_e <- ggdraw(p_panel_e) +
+            draw_label("E", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
     } else {
-        p_panel_e <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No PPI data", size = 6) +
+        p_panel_e <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No PPI data", size = 8) +
             theme_void() +
-            theme(plot.tag = element_text(face = "bold", size = 20)) +
+            theme(plot.tag = element_text(face = "bold", size = 24)) +
             plot_annotation(tag_levels = list(c("E")))
     }
 } else {
-    p_panel_e <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient genes", size = 6) +
+    p_panel_e <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient genes", size = 8) +
         theme_void() +
-        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        theme(plot.tag = element_text(face = "bold", size = 24)) +
         plot_annotation(tag_levels = list(c("E")))
 }
 
@@ -826,36 +841,41 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
                 scale_size_manual(values = c("Drug" = 5, "Pathway" = 3), name = "Type") +
                 scale_shape_manual(values = c("Multi" = 17, "Single" = 16), name = "Targeting") +
                 geom_node_text(aes(label = name, fontface = ifelse(multi_target, "bold", "plain")),
-                               repel = TRUE, size = 3, max.overlaps = 50) +
+                               repel = TRUE, size = 4, max.overlaps = 50) +
                 theme_void() +
                 labs(title = "Polypharmacology") +
-                theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+                theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
                       legend.position = "bottom",
-                      plot.tag = element_text(face = "bold", size = 20)) +
-                plot_annotation(tag_levels = list(c("F")))
+                      legend.text = element_text(size = 12),
+                      legend.title = element_text(size = 13),
+                      plot.tag = element_text(face = "bold", size = 24))
+            
+            # Add label in foreground
+            p_panel_f <- ggdraw(p_panel_f) +
+                draw_label("F", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
         } else {
-            p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No overlaps", size = 6) +
+            p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No overlaps", size = 8) +
                 theme_void() +
-                theme(plot.tag = element_text(face = "bold", size = 20)) +
+                theme(plot.tag = element_text(face = "bold", size = 24)) +
                 plot_annotation(tag_levels = list(c("F")))
         }
     } else {
-        p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient data", size = 6) +
+        p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient data", size = 8) +
             theme_void() +
-            theme(plot.tag = element_text(face = "bold", size = 20)) +
+            theme(plot.tag = element_text(face = "bold", size = 24)) +
             plot_annotation(tag_levels = list(c("F")))
     }
 } else {
-    p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug/pathway data", size = 6) +
+    p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug/pathway data", size = 8) +
         theme_void() +
-        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        theme(plot.tag = element_text(face = "bold", size = 24)) +
         plot_annotation(tag_levels = list(c("F")))
 }
 
 # ==============================================================================
-# PANEL G: DRUG-PATHWAY HEATMAP (NO FILTERING)
+# PANEL G: DRUG-PATHWAY HEATMAP
 # ==============================================================================
-cat("Panel G: Creating Drug-Pathway Heatmap (NO FILTERING)...\n")
+cat("Panel G: Creating Drug-Pathway Heatmap...\n")
 
 if(!is.null(pathway_results) && !is.null(drug_results) && 
    nrow(pathway_results) > 0 && nrow(drug_results) > 0) {
@@ -886,38 +906,38 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
                                            c("white", "#fee090", "#d73027")),
                           cluster_rows = TRUE, cluster_columns = TRUE,
                           column_title = "Drug-Pathway Overlap",
-                          column_title_gp = gpar(fontsize = 13, fontface = "bold"),
-                          row_names_gp = gpar(fontsize = 8),
-                          column_names_gp = gpar(fontsize = 7),
-                          heatmap_legend_param = list(title_gp = gpar(fontsize = 10)),
+                          column_title_gp = gpar(fontsize = 15, fontface = "bold"),
+                          row_names_gp = gpar(fontsize = 10),
+                          column_names_gp = gpar(fontsize = 9),
+                          heatmap_legend_param = list(title_gp = gpar(fontsize = 12)),
                           width = unit(5, "cm"), height = unit(7, "cm"))
             
             ht_grob <- grid.grabExpr(draw(ht))
             p_panel_g <- ggdraw(ht_grob) +
-                draw_label("G", x = 0.02, y = 0.98, fontface = "bold", size = 20, color = "black")
+                draw_label("G", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
         } else {
-            p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No data", size = 6) +
+            p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No data", size = 8) +
                 theme_void() +
-                theme(plot.tag = element_text(face = "bold", size = 20)) +
+                theme(plot.tag = element_text(face = "bold", size = 24)) +
                 plot_annotation(tag_levels = list(c("G")))
         }
     } else {
-        p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient pathways/drugs", size = 6) +
+        p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient pathways/drugs", size = 8) +
             theme_void() +
-            theme(plot.tag = element_text(face = "bold", size = 20)) +
+            theme(plot.tag = element_text(face = "bold", size = 24)) +
             plot_annotation(tag_levels = list(c("G")))
     }
 } else {
-    p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug/pathway data", size = 6) +
+    p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug/pathway data", size = 8) +
         theme_void() +
-        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        theme(plot.tag = element_text(face = "bold", size = 24)) +
         plot_annotation(tag_levels = list(c("G")))
 }
 
 # ==============================================================================
-# PANEL H: 2D DRUG PLOT (MORE DISTINCT PATHWAY COLORS)
+# PANEL H: 2D DRUG PLOT (LARGER FONTS, BLACK LABELS)
 # ==============================================================================
-cat("Panel H: Creating 2D Drug Plot with distinct colors...\n")
+cat("Panel H: Creating 2D Drug Plot with larger fonts and black labels...\n")
 
 if(length(drug_profiles) > 0) {
     plot_df <- data.frame()
@@ -938,18 +958,18 @@ if(length(drug_profiles) > 0) {
         ))
     }
     
-    # More distinct color scheme using viridis
     p_panel_h <- ggplot(plot_df, aes(x = NES, y = BBB, size = Integrated, color = PathwayCount)) +
         geom_point(alpha = 0.8) +
         geom_text_repel(aes(label = Drug), 
-                       size = 2.5, 
+                       size = 4,  # Increased from 2.5
                        max.overlaps = 30,
                        box.padding = 0.3,
                        point.padding = 0.25,
                        segment.color = "grey50",
                        segment.size = 0.2,
                        min.segment.length = 0,
-                       force = 2) +
+                       force = 2,
+                       color = "black") +  # BLACK labels
         geom_hline(yintercept = BBB_SCORE_THRESHOLD, linetype = "dashed", color = "red", alpha = 0.5, linewidth = 0.4) +
         geom_vline(xintercept = 1.0, linetype = "dashed", color = "blue", alpha = 0.5, linewidth = 0.4) +
         scale_color_viridis_c(option = "plasma", name = "Pathway\nHits", begin = 0.2, end = 0.9) +
@@ -958,23 +978,28 @@ if(length(drug_profiles) > 0) {
              subtitle = "IntScore = |NES|^1.5 × BBB (pathways in color)",
              x = "|NES|",
              y = "BBB Score") +
-        theme_minimal(base_size = 9) +
-        theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
-              plot.subtitle = element_text(size = 7, hjust = 0.5),
+        theme_minimal(base_size = 13) +  # Increased
+        theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+              plot.subtitle = element_text(size = 12, hjust = 0.5),  # Increased from 7
+              axis.title = element_text(size = 14),
+              axis.text = element_text(size = 12),
               legend.position = "right",
-              legend.text = element_text(size = 7),
-              legend.title = element_text(size = 8),
-              plot.tag = element_text(face = "bold", size = 20)) +
-        plot_annotation(tag_levels = list(c("H")))
+              legend.text = element_text(size = 11),
+              legend.title = element_text(size = 12),
+              plot.tag = element_text(face = "bold", size = 24))
+    
+    # Add label in foreground
+    p_panel_h <- ggdraw(p_panel_h) +
+        draw_label("H", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
 } else {
-    p_panel_h <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug data", size = 6) +
+    p_panel_h <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug data", size = 8) +
         theme_void() +
-        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        theme(plot.tag = element_text(face = "bold", size = 24)) +
         plot_annotation(tag_levels = list(c("H")))
 }
 
 # ==============================================================================
-# PANEL I: TOP 20 DRUGS TABLE AS GGPLOT (PROPER SIZE)
+# PANEL I: TOP 20 DRUGS TABLE AS GGPLOT
 # ==============================================================================
 cat("Panel I: Creating Drug Table as ggplot (20 drugs)...\n")
 
@@ -997,37 +1022,38 @@ if(length(drug_profiles) >= TOP_DRUGS_DISPLAY) {
         ))
     }
     
-    # Create as ggplot for proper sizing
     p_panel_i <- ggplot(table_data, aes(x = 0, y = -Rank)) +
-        geom_text(aes(x = 0.5, label = Rank), size = 3, hjust = 0.5) +
-        geom_text(aes(x = 2, label = Drug), size = 3, hjust = 0, fontface = "bold") +
-        geom_text(aes(x = 5, label = NES), size = 3, hjust = 0.5) +
-        geom_text(aes(x = 6, label = BBB), size = 3, hjust = 0.5) +
-        geom_text(aes(x = 7, label = Trials), size = 3, hjust = 0.5) +
-        geom_text(aes(x = 8, label = Path), size = 3, hjust = 0.5) +
-        geom_text(aes(x = 9, label = Score), size = 3, hjust = 0.5) +
-        # Headers
-        geom_text(aes(x = 0.5, y = 0.5), label = "#", size = 3.5, fontface = "bold", hjust = 0.5) +
-        geom_text(aes(x = 2, y = 0.5), label = "Drug", size = 3.5, fontface = "bold", hjust = 0) +
-        geom_text(aes(x = 5, y = 0.5), label = "|NES|", size = 3.5, fontface = "bold", hjust = 0.5) +
-        geom_text(aes(x = 6, y = 0.5), label = "BBB", size = 3.5, fontface = "bold", hjust = 0.5) +
-        geom_text(aes(x = 7, y = 0.5), label = "Trials", size = 3.5, fontface = "bold", hjust = 0.5) +
-        geom_text(aes(x = 8, y = 0.5), label = "Path", size = 3.5, fontface = "bold", hjust = 0.5) +
-        geom_text(aes(x = 9, y = 0.5), label = "Score", size = 3.5, fontface = "bold", hjust = 0.5) +
+        geom_text(aes(x = 0.5, label = Rank), size = 4, hjust = 0.5) +
+        geom_text(aes(x = 2, label = Drug), size = 4, hjust = 0, fontface = "bold") +
+        geom_text(aes(x = 5, label = NES), size = 4, hjust = 0.5) +
+        geom_text(aes(x = 6, label = BBB), size = 4, hjust = 0.5) +
+        geom_text(aes(x = 7, label = Trials), size = 4, hjust = 0.5) +
+        geom_text(aes(x = 8, label = Path), size = 4, hjust = 0.5) +
+        geom_text(aes(x = 9, label = Score), size = 4, hjust = 0.5) +
+        geom_text(aes(x = 0.5, y = 0.5), label = "#", size = 4.5, fontface = "bold", hjust = 0.5) +
+        geom_text(aes(x = 2, y = 0.5), label = "Drug", size = 4.5, fontface = "bold", hjust = 0) +
+        geom_text(aes(x = 5, y = 0.5), label = "|NES|", size = 4.5, fontface = "bold", hjust = 0.5) +
+        geom_text(aes(x = 6, y = 0.5), label = "BBB", size = 4.5, fontface = "bold", hjust = 0.5) +
+        geom_text(aes(x = 7, y = 0.5), label = "Trials", size = 4.5, fontface = "bold", hjust = 0.5) +
+        geom_text(aes(x = 8, y = 0.5), label = "Path", size = 4.5, fontface = "bold", hjust = 0.5) +
+        geom_text(aes(x = 9, y = 0.5), label = "Score", size = 4.5, fontface = "bold", hjust = 0.5) +
         geom_hline(yintercept = 0.2, linewidth = 1) +
         scale_x_continuous(limits = c(0, 10), expand = c(0, 0)) +
         scale_y_continuous(limits = c(-TOP_DRUGS_DISPLAY - 0.5, 1), expand = c(0, 0)) +
         theme_void() +
         labs(title = sprintf("Top %d Drug Candidates", TOP_DRUGS_DISPLAY)) +
-        theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5, margin = margin(b = 10)),
-              plot.tag = element_text(face = "bold", size = 20),
-              plot.margin = margin(10, 10, 10, 10)) +
-        plot_annotation(tag_levels = list(c("I")))
+        theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5, margin = margin(b = 10)),
+              plot.tag = element_text(face = "bold", size = 24),
+              plot.margin = margin(10, 10, 10, 10))
+    
+    # Add label in foreground
+    p_panel_i <- ggdraw(p_panel_i) +
+        draw_label("I", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
     
 } else {
-    p_panel_i <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient drugs", size = 6) +
+    p_panel_i <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient drugs", size = 8) +
         theme_void() +
-        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        theme(plot.tag = element_text(face = "bold", size = 24)) +
         plot_annotation(tag_levels = list(c("I")))
 }
 
@@ -1050,10 +1076,10 @@ main_figure <- (p_panel_a | p_panel_b | p_panel_c) /
 
 final_figure <- main_figure +
     plot_annotation(caption = caption_text,
-                   theme = theme(plot.caption = element_text(size = 9, hjust = 0, margin = margin(t = 10))))
+                   theme = theme(plot.caption = element_text(size = 12, hjust = 0, margin = margin(t = 10))))  # Increased
 
 ggsave(
-    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_FINAL_V2.png"),
+    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_FINAL_V3.png"),
     plot = final_figure,
     width = 20,
     height = 19,
@@ -1062,7 +1088,7 @@ ggsave(
 )
 
 ggsave(
-    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_FINAL_V2.pdf"),
+    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_FINAL_V3.pdf"),
     plot = final_figure,
     width = 20,
     height = 19
@@ -1071,18 +1097,21 @@ ggsave(
 captions <- c(
     "FIGURE: U251 Transcriptomic Evolution and Therapeutic Target Discovery",
     "",
-    "ALL FIXES APPLIED:",
+    "ALL FIXES APPLIED IN V3:",
     "- ✅ ChEMBL API connection restored",
     "- ✅ BBB scoring decimal precision fixed",
-    "- ✅ Significance markers ONLY for adjacent stages (no center markers)",
+    "- ✅ Significance markers positioned ABOVE trajectory line",
+    "- ✅ ALL panel labels (A-I) visible in foreground",
+    "- ✅ ALL font sizes increased globally (axes, titles, legends, caption)",
+    "- ✅ Drug plot: larger subtitle, BLACK labels, larger drug names",
     "- ✅ Tree plot smaller font (2, 4)",
     "- ✅ Table as ggplot with 20 drugs, proper sizing",
     "- ✅ Pathway color scheme more distinct (viridis plasma)",
     "- ✅ Legends added back for PPI and Polypharmacology"
 )
 
-writeLines(captions, file.path(OUT_DIR, "Figure_Captions_FINAL_V2.txt"))
+writeLines(captions, file.path(OUT_DIR, "Figure_Captions_FINAL_V3.txt"))
 
 cat("\n✅ Publication figure complete!\n")
-cat(sprintf("   PNG: %s/Publication_Figure_9Panel_FINAL_V2.png\n", OUT_DIR))
-cat(sprintf("   PDF: %s/Publication_Figure_9Panel_FINAL_V2.pdf\n", OUT_DIR))
+cat(sprintf("   PNG: %s/Publication_Figure_9Panel_FINAL_V3.png\n", OUT_DIR))
+cat(sprintf("   PDF: %s/Publication_Figure_9Panel_FINAL_V3.pdf\n", OUT_DIR))
