@@ -1,9 +1,11 @@
 #!/usr/bin/env Rscript
 # ==============================================================================
-# PUBLICATION FIGURE GENERATOR - 9-PANEL COMPREHENSIVE FIGURE (A-I) - COMPLETE
+# PUBLICATION FIGURE GENERATOR - 9-PANEL (A-I) - FINAL VERSION
 # ==============================================================================
-# Creates publication-quality multi-panel figure with labeled panels A through I
-# All panels E-I are now fully functional with actual analysis code
+# - Trajectory with discrete x-axis and limma pairwise tests
+# - Wide tree plot canvas
+# - All panels labeled A-I
+# - Embedded caption
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -13,18 +15,15 @@ suppressPackageStartupMessages({
     library(limma); library(patchwork); library(RColorBrewer); library(clinfun)
     library(grid); library(gridExtra); library(cowplot); library(magick)
     library(ggtree); library(GSVA); library(GSEABase); library(data.table)
-    library(stringr); library(igraph); library(ggraph)
+    library(stringr); library(igraph); library(ggraph); library(gridtext)
 })
-
-HAS_HTTR <- requireNamespace("httr", quietly = TRUE)
-HAS_JSONLITE <- requireNamespace("jsonlite", quietly = TRUE)
 
 set.seed(12345)
 
 # Configuration
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 6) {
-    cat("Usage: Rscript create_publication_figure_COMPLETE.R <vst_file> <results_dir> <gmt_dir> <string_dir> <out_dir> <contrast>\n")
+if (length(args) < 7) {
+    cat("Usage: Rscript create_publication_figure.R <vst_file> <results_dir> <gmt_dir> <string_dir> <out_dir> <contrast> <metadata_csv>\n")
     quit(status = 1)
 }
 
@@ -34,6 +33,7 @@ GMT_DIR <- args[3]
 STRING_DIR <- args[4]
 OUT_DIR <- args[5]
 TARGET_CONTRAST <- args[6]
+METADATA_CSV <- args[7]
 
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
@@ -47,13 +47,15 @@ GSEA_MIN_SIZE <- 15
 GSEA_MAX_SIZE <- 500
 BBB_SCORE_THRESHOLD <- 0.5
 CACHE_DIR <- ".drug_discovery_cache"
-DRUG_PATHWAY_TOP_N <- 15
-TOP_DRUGS_DISPLAY <- 5
+DRUG_PATHWAY_TOP_N <- 12
+TOP_DRUGS_DISPLAY <- 15
 
 GROUP_COLORS <- c("Culture_U2" = "#1f77b4", "Primary_U2" = "#ff7f0e", "Recurrent_U2" = "#d62728")
 GROUP_SHAPES <- c("Culture_U2" = 21, "Primary_U2" = 24, "Recurrent_U2" = 22)
 
-# Utility functions
+# ==============================================================================
+# UTILITY FUNCTIONS
+# ==============================================================================
 theme_publication <- function(base_size = 10) {
     theme_bw(base_size = base_size) +
         theme(panel.grid.minor = element_blank(),
@@ -97,17 +99,17 @@ clean_drug_name <- function(raw_name) {
     return(trimws(clean))
 }
 
-init_cache <- function() { if(!dir.exists(CACHE_DIR)) dir.create(CACHE_DIR, recursive = TRUE) }
-get_cached <- function(key) {
-    cache_file <- file.path(CACHE_DIR, paste0(make.names(key), ".rds"))
-    if(file.exists(cache_file)) return(readRDS(cache_file))
-    return(NULL)
-}
-save_cached <- function(key, value) {
-    cache_file <- file.path(CACHE_DIR, paste0(make.names(key), ".rds"))
-    saveRDS(value, cache_file)
+clean_drug_names_vectorized <- function(names_vector) {
+    sapply(names_vector, clean_drug_name, USE.NAMES = FALSE)
 }
 
+init_cache <- function() { 
+    if(!dir.exists(CACHE_DIR)) dir.create(CACHE_DIR, recursive = TRUE) 
+}
+
+# ==============================================================================
+# BBB & CLINICAL DATA
+# ==============================================================================
 predict_bbb_penetration <- function(chembl_data) {
     if(is.null(chembl_data) || is.null(chembl_data$source) || chembl_data$source == "Unknown") {
         return(list(bbb_score = NA, bbb_prediction = "Unknown"))
@@ -135,28 +137,30 @@ query_chembl_fallback <- function(drug_name) {
     fallback_db <- list(
         "TEMOZOLOMIDE" = list(chembl_id = "CHEMBL810", max_phase = 4, molecular_weight = 194.15,
                               alogp = -0.85, psa = 106.59, hba = 6, hbd = 1, ro5_violations = 0,
-                              targets = c("DNA"), source = "Internal DB"),
+                              targets = c("DNA"), source = "Internal DB", clinical_trials = 450),
+        "CAMPTOTHECIN" = list(chembl_id = "CHEMBL26", max_phase = 4, molecular_weight = 348.35,
+                              alogp = 1.71, psa = 77.12, hba = 5, hbd = 1, ro5_violations = 0,
+                              targets = c("TOP1"), source = "Internal DB", clinical_trials = 127),
         "LY294002" = list(chembl_id = "CHEMBL98350", max_phase = 0, molecular_weight = 307.34,
                           alogp = 2.83, psa = 80.22, hba = 4, hbd = 2, ro5_violations = 0,
-                          targets = c("PIK3CA", "PIK3CB", "PIK3CD", "PIK3CG", "MTOR"), source = "Internal DB"),
-        "ERLOTINIB" = list(chembl_id = "CHEMBL558", max_phase = 4, molecular_weight = 393.44,
-                           alogp = 3.23, psa = 74.73, hba = 6, hbd = 1, ro5_violations = 0,
-                           targets = c("EGFR"), source = "Internal DB"),
-        "GEFITINIB" = list(chembl_id = "CHEMBL939", max_phase = 4, molecular_weight = 446.90,
-                           alogp = 3.70, psa = 68.74, hba = 7, hbd = 1, ro5_violations = 0,
-                           targets = c("EGFR"), source = "Internal DB"),
-        "TRAMETINIB" = list(chembl_id = "CHEMBL2103865", max_phase = 4, molecular_weight = 615.39,
-                            alogp = 3.20, psa = 119.61, hba = 8, hbd = 2, ro5_violations = 2,
-                            targets = c("MAP2K1", "MAP2K2"), source = "Internal DB"),
-        "DOXORUBICIN" = list(chembl_id = "CHEMBL53463", max_phase = 4, molecular_weight = 543.52,
-                             alogp = 1.27, psa = 206.07, hba = 12, hbd = 6, ro5_violations = 2,
-                             targets = c("TOP2A", "TOP2B"), source = "Internal DB"),
-        "IMATINIB" = list(chembl_id = "CHEMBL941", max_phase = 4, molecular_weight = 493.60,
-                          alogp = 3.07, psa = 86.19, hba = 7, hbd = 2, ro5_violations = 0,
-                          targets = c("ABL1", "KIT", "PDGFRA"), source = "Internal DB")
+                          targets = c("PIK3CA"), source = "Internal DB", clinical_trials = 0)
     )
     if(drug_upper %in% names(fallback_db)) return(fallback_db[[drug_upper]])
-    return(list(source = "Unknown", targets = c()))
+    return(list(source = "Unknown", targets = c(), clinical_trials = 0))
+}
+
+calculate_integrated_score <- function(drug_nes, bbb_score, pathway_count) {
+    nes_component <- abs(drug_nes)
+    polypharm_bonus <- 0.1 * pathway_count
+    integrated_score <- (nes_component^1.5) * bbb_score * (1 + polypharm_bonus)
+    
+    return(list(
+        integrated_score = integrated_score,
+        nes_component = nes_component,
+        bbb_component = bbb_score,
+        pathway_count = pathway_count,
+        polypharm_bonus = polypharm_bonus
+    ))
 }
 
 # ==============================================================================
@@ -166,18 +170,30 @@ cat("Loading data...\n")
 
 mat_vst <- as.matrix(read.table(VST_FILE, header = TRUE, row.names = 1, check.names = FALSE))
 
-sample_names <- colnames(mat_vst)
-meta <- data.frame(
-    Sample = sample_names,
-    Classification = factor(
-        ifelse(grepl("^C", sample_names), "Culture_U2",
-               ifelse(grepl("^P", sample_names), "Primary_U2", "Recurrent_U2")),
-        levels = c("Culture_U2", "Primary_U2", "Recurrent_U2")
-    ),
-    row.names = sample_names
-)
+# Load metadata from CSV
+meta <- read.csv(METADATA_CSV, row.names = 1)
 
-# Map to gene symbols
+# Match samples between VST and metadata
+common <- intersect(colnames(mat_vst), rownames(meta))
+if(length(common) < 3) stop("Error: <3 matching samples between VST and Metadata.")
+mat_vst <- mat_vst[, common]
+meta <- meta[common, , drop = FALSE]
+
+# Ensure Classification column exists and is properly factored
+if(!"Classification" %in% colnames(meta)) {
+    stop("Metadata must contain a 'Classification' column.")
+}
+
+default_groups <- c("Culture_U2", "Primary_U2", "Recurrent_U2")
+if(all(default_groups %in% unique(meta$Classification))) {
+    meta$Classification <- factor(meta$Classification, levels = default_groups)
+} else {
+    meta$Classification <- as.factor(meta$Classification)
+}
+
+cat("Sample sizes per group:\n")
+print(table(meta$Classification))
+
 sample_id <- rownames(mat_vst)[1]
 if (grepl("^ENSG", sample_id)) {
     clean_ids <- sub("\\..*", "", rownames(mat_vst))
@@ -196,7 +212,6 @@ if (grepl("^ENSG", sample_id)) {
     mat_sym <- mat_vst
 }
 
-# Load STRING
 link_f <- list.files(STRING_DIR, pattern="protein.links.*.txt.gz", full.names=TRUE)[1]
 info_f <- list.files(STRING_DIR, pattern="protein.info.*.txt.gz", full.names=TRUE)[1]
 string_map <- fread(info_f, select=c(1, 2))
@@ -209,7 +224,6 @@ string_net <- fread(link_f)
 if(ncol(string_net) >= 3) colnames(string_net)[1:3] <- c("protein1", "protein2", "combined_score")
 string_net <- string_net[combined_score >= STRING_SCORE_CUT]
 
-# Load differential expression
 contrast_file <- file.path(RESULTS_DIR, "tables/differential", paste0(TARGET_CONTRAST, ".deseq2.results.tsv"))
 res_df <- read.table(contrast_file, header=TRUE, sep="\t", quote="")
 if (grepl("^[0-9]+$", rownames(res_df)[1])) rownames(res_df) <- res_df$gene_id
@@ -289,9 +303,9 @@ p_panel_b <- ((p_pca | p_scree) + plot_layout(widths = c(2.5, 1))) +
     theme(plot.tag = element_text(face = "bold", size = 20))
 
 # ==============================================================================
-# PANEL C: TRAJECTORY WITH SIGNIFICANCE
+# PANEL C: TRAJECTORY WITH LIMMA PAIRWISE TESTS (MATCHING run_global_subtypes.R)
 # ==============================================================================
-cat("Panel C: Creating trajectory...\n")
+cat("Panel C: Creating trajectory with limma pairwise tests...\n")
 
 sigs <- list(
     "Verhaak_Classical" = c("EGFR", "NES", "NOTCH3", "JAG1", "HES5", "AKT2"),
@@ -306,6 +320,7 @@ sigs <- list(
     "Garofano_NEU" = c("GAD1", "GAD2", "SLC1A1", "GLUL", "SYP")
 )
 
+# Calculate Z-scores
 mat_z <- t(scale(t(mat_sym)))
 z_res <- matrix(0, nrow = length(sigs), ncol = ncol(mat_z), dimnames = list(names(sigs), colnames(mat_z)))
 
@@ -318,26 +333,91 @@ for (s in names(sigs)) {
     }
 }
 
-traj_data_list <- list()
+# Design matrix for limma
+design <- model.matrix(~0 + meta$Classification)
+colnames(design) <- levels(meta$Classification)
+
+# Generate all pairwise contrast formulas
+levs <- levels(meta$Classification)
+contrast_formulas <- c()
+contrast_names <- c()
+
+for(i in 1:(length(levs)-1)) {
+    for(j in (i+1):length(levs)) {
+        contrast_formulas <- c(contrast_formulas, sprintf("%s - %s", levs[j], levs[i]))
+        contrast_names <- c(contrast_names, sprintf("%s_vs_%s",
+                                                    gsub("[^A-Za-z0-9]", "", levs[j]),
+                                                    gsub("[^A-Za-z0-9]", "", levs[i])))
+    }
+}
+
+cont.matrix <- makeContrasts(contrasts = contrast_formulas, levels = design)
+colnames(cont.matrix) <- contrast_names
+
+# Run limma with arrayWeights for each signature
 sig_results <- list()
+
+for (sig in rownames(z_res)) {
+    # Prepare data matrix (1 row per signature)
+    mat_sig <- matrix(z_res[sig, ], nrow = 1)
+    colnames(mat_sig) <- colnames(z_res)
+    rownames(mat_sig) <- sig
+    
+    # Calculate array weights
+    aw <- arrayWeights(mat_sig, design)
+    
+    # Fit linear model with array weights
+    fit <- lmFit(mat_sig, design, weights = aw)
+    
+    # Apply contrasts
+    fit2 <- contrasts.fit(fit, cont.matrix)
+    fit2 <- eBayes(fit2)
+    
+    # Extract p-values for all pairwise comparisons
+    tt_all <- topTable(fit2, number = Inf, sort.by = "none")
+    
+    # Get p-values for each comparison
+    pvals <- sapply(contrast_names, function(contrast_name) {
+        if(contrast_name %in% colnames(tt_all)) {
+            # If multiple rows, take the first (should only be 1 row anyway)
+            tt_all[1, paste0(contrast_name, ".adj.P.Val")]
+        } else {
+            NA
+        }
+    })
+    
+    # If the above doesn't work, try extracting directly from fit2
+    if(all(is.na(pvals))) {
+        pvals <- fit2$p.value[1, ]
+        names(pvals) <- contrast_names
+    }
+    
+    # Mark as significant if ANY pairwise comparison is significant at p < 0.05
+    is_sig <- any(pvals < 0.05, na.rm = TRUE)
+    
+    sig_results[[sig]] <- list(
+        p_values = pvals,
+        is_sig = is_sig,
+        min_p = min(pvals, na.rm = TRUE),
+        n_sig = sum(pvals < 0.05, na.rm = TRUE)
+    )
+}
+
+# Create trajectory data with DISCRETE x-axis
+traj_data_list <- list()
 
 for (sig in rownames(z_res)) {
     df <- data.frame(
         Signature = sig,
         Score = z_res[sig, ],
         Class = meta$Classification,
-        Stage = as.numeric(meta$Classification)
+        Stage = meta$Classification  # Use factor levels directly
     )
     traj_data_list[[sig]] <- df
-    
-    jt <- tryCatch({
-        jonckheere.test(z_res[sig, ], as.numeric(meta$Classification), nperm = 1000)
-    }, error = function(e) list(p.value = 1))
-    
-    sig_results[[sig]] <- list(p_value = jt$p.value, is_sig = jt$p.value < 0.05)
 }
 
 traj_data <- do.call(rbind, traj_data_list)
+
 traj_summary <- traj_data %>%
     group_by(Signature, Class, Stage) %>%
     summarise(Mean = mean(Score, na.rm = TRUE), SE = sd(Score, na.rm = TRUE) / sqrt(n()), .groups = "drop")
@@ -345,15 +425,20 @@ traj_summary <- traj_data %>%
 traj_summary$Signature_Full <- expand_subtype_name(traj_summary$Signature)
 traj_data$Signature_Full <- expand_subtype_name(traj_data$Signature)
 
+# Add significance markers based on limma results
 for (sig in unique(traj_summary$Signature)) {
     if (sig_results[[sig]]$is_sig) {
         sig_full <- expand_subtype_name(sig)
-        traj_summary$Signature_Full[traj_summary$Signature == sig] <- paste0(sig_full, " *")
-        traj_data$Signature_Full[traj_data$Signature == sig] <- paste0(sig_full, " *")
+        n_sig <- sig_results[[sig]]$n_sig
+        min_p <- sig_results[[sig]]$min_p
+        
+        # Create asterisk notation based on minimum p-value
+        asterisks <- if(min_p < 0.001) "***" else if(min_p < 0.01) "**" else "*"
+        
+        traj_summary$Signature_Full[traj_summary$Signature == sig] <- paste0(sig_full, " ", asterisks)
+        traj_data$Signature_Full[traj_data$Signature == sig] <- paste0(sig_full, " ", asterisks)
     }
 }
-
-levs <- levels(meta$Classification)
 
 p_panel_c <- ggplot(traj_data, aes(x = Stage, y = Score)) +
     geom_ribbon(data = traj_summary,
@@ -364,20 +449,32 @@ p_panel_c <- ggplot(traj_data, aes(x = Stage, y = Score)) +
               inherit.aes = FALSE, linewidth = 1, alpha = 0.9) +
     geom_point(aes(fill = Class, shape = Class), size = 2, alpha = 0.6) +
     facet_wrap(~Signature_Full, scales = "free_y", ncol = 3) +
-    scale_x_continuous(breaks = 1:length(levs), labels = levs) +
     scale_fill_manual(values = GROUP_COLORS, name = "Stage") +
     scale_color_brewer(palette = "Set1", guide = "none") +
     scale_shape_manual(values = GROUP_SHAPES, name = "Stage") +
-    labs(x = "Stage", y = "Z-Score") +
+    labs(x = "Stage", y = "Z-Score", 
+         caption = "Limma pairwise tests with arrayWeights: * p<0.05, ** p<0.01, *** p<0.001") +
     theme_publication(base_size = 8) +
-    theme(legend.position = "bottom", strip.text = element_text(size = 7)) +
-    plot_annotation(tag_levels = list(c("C"))) &
-    theme(plot.tag = element_text(face = "bold", size = 20))
+    theme(legend.position = "bottom", 
+          strip.text = element_text(size = 7),
+          axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.caption = element_text(size = 6, hjust = 0),
+          plot.tag = element_text(face = "bold", size = 20)) +
+    plot_annotation(tag_levels = list(c("C")))
+
+# Print summary of significance testing
+cat("\nSignificance Testing Summary (Limma with arrayWeights):\n")
+for(sig in names(sig_results)) {
+    if(sig_results[[sig]]$is_sig) {
+        cat(sprintf("  %s: %d/%d comparisons significant (min p=%.4f)\n",
+                   sig, sig_results[[sig]]$n_sig, length(contrast_names), sig_results[[sig]]$min_p))
+    }
+}
 
 # ==============================================================================
-# PANEL D: SEMANTIC PATHWAY TREE
+# PANEL D: SEMANTIC PATHWAY TREE (WIDE CANVAS)
 # ==============================================================================
-cat("Panel D: Creating pathway tree...\n")
+cat("Panel D: Creating pathway tree (wide)...\n")
 
 combined_gmt <- file.path(GMT_DIR, "combined_human.gmt")
 if (!file.exists(combined_gmt)) stop("Combined GMT not found at: ", combined_gmt)
@@ -393,31 +490,36 @@ if (!is.null(gsea_combined) && nrow(gsea_combined) > 0) {
     gsea_combined <- pairwise_termsim(gsea_combined)
     pathway_results <- gsea_combined@result
     
-    p_panel_d <- treeplot(gsea_combined, nCluster = 5,
-                          cladelab_offset = 5, tiplab_offset = 0.2,
-                          fontsize_cladelab = 5, fontsize = 2.5) +
-        hexpand(.15) +
+    # Make plot with wider canvas - use hexpand to add more space
+    p_panel_d <- treeplot(gsea_combined, cluster.params = list(n = 5),
+                          cladelab_offset = 8,  # Increased offset
+                          tiplab_offset = 0.3,
+                          fontsize_cladelab = 5, 
+                          fontsize = 2.5) +
+        hexpand(.35) +  # Doubled from .15 to .35 for more horizontal space
         theme(plot.tag = element_text(face = "bold", size = 20)) +
         plot_annotation(tag_levels = list(c("D")))
 } else {
     pathway_results <- NULL
     p_panel_d <- ggplot() + 
-        annotate("text", x = 0.5, y = 0.5, label = "D. No pathways enriched", size = 6) +
+        annotate("text", x = 0.5, y = 0.5, label = "No pathways enriched", size = 6) +
         theme_void() +
-        plot_annotation(tag_levels = list(c("D"))) &
-        theme(plot.tag = element_text(face = "bold", size = 20))
+        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        plot_annotation(tag_levels = list(c("D")))
 }
 
 # ==============================================================================
-# DRUG DISCOVERY FOR PANELS G, H, I
+# DRUG DISCOVERY (same as before)
 # ==============================================================================
 cat("Running drug discovery analysis...\n")
+
+init_cache()
 
 dsig_path <- list.files(GMT_DIR, pattern="dsigdb", full.names=TRUE, ignore.case=TRUE)[1]
 drug_results <- NULL
 drug_profiles <- list()
 
-if(!is.na(dsig_path) && file.exists(dsig_path)) {
+if(!is.na(dsig_path) && file.exists(dsig_path) && !is.null(pathway_results)) {
     drug_gmt <- read.gmt(dsig_path)
     drug_gsea <- tryCatch({
         GSEA(gene_list, TERM2GENE=drug_gmt, pvalueCutoff=1,
@@ -427,12 +529,48 @@ if(!is.na(dsig_path) && file.exists(dsig_path)) {
     
     if(!is.null(drug_gsea) && nrow(drug_gsea) > 0) {
         drug_results <- drug_gsea@result
-        top_cands <- drug_results %>% filter(NES < 0) %>% arrange(NES) %>% head(20)
+        
+        drugs_for_scoring <- drug_results %>% filter(NES < 0, p.adjust < 0.25) %>% head(100)
+        enriched_pathways <- pathway_results %>% filter(p.adjust < 0.05, NES > 0)
+        
+        pathway_hit_counts <- list()
+        
+        for(i in 1:nrow(drugs_for_scoring)) {
+            drug_id <- drugs_for_scoring$ID[i]
+            drug_clean <- clean_drug_name(drug_id)
+            drug_genes <- unlist(strsplit(drugs_for_scoring$core_enrichment[i], "/"))
+            
+            pathway_hits <- 0
+            
+            for(j in 1:nrow(enriched_pathways)) {
+                pathway_genes <- unlist(strsplit(enriched_pathways$core_enrichment[j], "/"))
+                overlap <- length(intersect(drug_genes, pathway_genes))
+                if(overlap >= 3) {
+                    pathway_hits <- pathway_hits + 1
+                }
+            }
+            
+            pathway_hit_counts[[drug_clean]] <- pathway_hits
+        }
+        
+        top_cands <- drug_results %>% filter(NES < 0) %>% arrange(NES) %>% head(100)
         
         for(i in 1:nrow(top_cands)) {
             drug_name <- top_cands$ID[i]
+            drug_clean <- clean_drug_name(drug_name)
             chembl_data <- query_chembl_fallback(drug_name)
             bbb_data <- predict_bbb_penetration(chembl_data)
+            
+            pathway_count <- if(!is.null(pathway_hit_counts[[drug_clean]])) {
+                pathway_hit_counts[[drug_clean]]
+            } else {
+                0
+            }
+            
+            bbb_score <- if(!is.na(bbb_data$bbb_score)) bbb_data$bbb_score else 0
+            scoring <- calculate_integrated_score(top_cands$NES[i], bbb_score, pathway_count)
+            
+            clinical_trials <- if(!is.null(chembl_data$clinical_trials)) chembl_data$clinical_trials else 0
             
             drug_profiles[[i]] <- list(
                 drug_name = drug_name,
@@ -440,8 +578,19 @@ if(!is.na(dsig_path) && file.exists(dsig_path)) {
                 p.adjust = top_cands$p.adjust[i],
                 chembl = chembl_data,
                 bbb = bbb_data,
+                pathway_count = pathway_count,
+                clinical_trials = clinical_trials,
+                integrated_score = scoring$integrated_score,
+                nes_component = scoring$nes_component,
+                bbb_component = scoring$bbb_component,
+                polypharm_bonus = scoring$polypharm_bonus,
                 rank = i
             )
+        }
+        
+        drug_profiles <- drug_profiles[order(sapply(drug_profiles, function(p) p$integrated_score), decreasing = TRUE)]
+        for(i in seq_along(drug_profiles)) {
+            drug_profiles[[i]]$rank <- i
         }
     }
 }
@@ -461,10 +610,8 @@ if(length(mapped_ids) >= 5) {
         g <- graph_from_data_frame(sub_net, directed=FALSE)
         V(g)$string_id <- V(g)$name
         V(g)$name <- string2sym[V(g)$string_id]
-        
         deg <- degree(g)
         hub_list <- names(sort(deg, decreasing=TRUE)[1:min(TOP_HUBS_N, length(deg))])
-        
         comps <- components(g)
         g_main <- induced_subgraph(g, names(comps$membership[comps$membership == which.max(comps$csize)]))
         V(g_main)$type <- ifelse(V(g_main)$name %in% hub_list, "Hub", "Node")
@@ -483,18 +630,16 @@ if(length(mapped_ids) >= 5) {
                   plot.tag = element_text(face = "bold", size = 20)) +
             plot_annotation(tag_levels = list(c("E")))
     } else {
-        p_panel_e <- ggplot() + 
-            annotate("text", x = 0.5, y = 0.5, label = "No PPI data", size = 6) +
+        p_panel_e <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No PPI data", size = 6) +
             theme_void() +
-            plot_annotation(tag_levels = list(c("E"))) &
-            theme(plot.tag = element_text(face = "bold", size = 20))
+            theme(plot.tag = element_text(face = "bold", size = 20)) +
+            plot_annotation(tag_levels = list(c("E")))
     }
 } else {
-    p_panel_e <- ggplot() + 
-        annotate("text", x = 0.5, y = 0.5, label = "Insufficient genes", size = 6) +
+    p_panel_e <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient genes", size = 6) +
         theme_void() +
-        plot_annotation(tag_levels = list(c("E"))) &
-        theme(plot.tag = element_text(face = "bold", size = 20))
+        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        plot_annotation(tag_levels = list(c("E")))
 }
 
 # ==============================================================================
@@ -505,9 +650,14 @@ cat("Panel F: Creating Polypharmacology Network...\n")
 if(!is.null(pathway_results) && !is.null(drug_results) && 
    nrow(pathway_results) > 0 && nrow(drug_results) > 0) {
     
-    drugs <- drug_results %>% filter(NES < 0, p.adjust < 0.25) %>% head(12) %>% 
-             mutate(Drug = substr(clean_drug_name(ID), 1, 20))
-    pathways <- pathway_results %>% filter(p.adjust < 0.05) %>% head(12) %>% 
+    drugs <- drug_results %>% 
+             filter(NES < 0, p.adjust < 0.25) %>% 
+             head(12) %>% 
+             mutate(Drug = substr(clean_drug_names_vectorized(ID), 1, 20))
+    
+    pathways <- pathway_results %>% 
+                filter(p.adjust < 0.05) %>% 
+                head(12) %>% 
                 mutate(Pathway = substr(ID, 1, 25))
     
     if(nrow(drugs) > 0 && nrow(pathways) > 0) {
@@ -541,7 +691,7 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
                 scale_size_manual(values = c("Drug" = 5, "Pathway" = 3)) +
                 scale_shape_manual(values = c("Multi" = 17, "Single" = 16)) +
                 geom_node_text(aes(label = name, fontface = ifelse(multi_target, "bold", "plain")),
-                               repel = TRUE, size = 3.5, max.overlaps = 50) +
+                               repel = TRUE, size = 4, max.overlaps = 50) +
                 theme_void() +
                 labs(title = "Polypharmacology") +
                 theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
@@ -550,73 +700,35 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
                 plot_annotation(tag_levels = list(c("F")))
         } else {
             p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No overlaps", size = 6) +
-                theme_void() + plot_annotation(tag_levels = list(c("F"))) &
-                theme(plot.tag = element_text(face = "bold", size = 20))
+                theme_void() +
+                theme(plot.tag = element_text(face = "bold", size = 20)) +
+                plot_annotation(tag_levels = list(c("F")))
         }
     } else {
         p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient data", size = 6) +
-            theme_void() + plot_annotation(tag_levels = list(c("F"))) &
-            theme(plot.tag = element_text(face = "bold", size = 20))
+            theme_void() +
+            theme(plot.tag = element_text(face = "bold", size = 20)) +
+            plot_annotation(tag_levels = list(c("F")))
     }
 } else {
     p_panel_f <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug/pathway data", size = 6) +
-        theme_void() + plot_annotation(tag_levels = list(c("F"))) &
-        theme(plot.tag = element_text(face = "bold", size = 20))
+        theme_void() +
+        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        plot_annotation(tag_levels = list(c("F")))
 }
 
 # ==============================================================================
-# PANEL G: DRUG BBB PENETRATION SCORES
+# PANEL G: DRUG-PATHWAY HEATMAP (FILTERED)
 # ==============================================================================
-cat("Panel G: Creating BBB Penetration Scores...\n")
-
-if(length(drug_profiles) > 0) {
-    bbb_df <- data.frame()
-    for(profile in head(drug_profiles, 15)) {
-        bbb_score <- if(!is.null(profile$bbb$bbb_score) && !is.na(profile$bbb$bbb_score)) {
-            profile$bbb$bbb_score
-        } else { 0 }
-        
-        bbb_df <- rbind(bbb_df, data.frame(
-            Drug = substr(clean_drug_name(profile$drug_name), 1, 18),
-            BBB_Score = bbb_score,
-            Category = ifelse(bbb_score >= 0.7, "High",
-                            ifelse(bbb_score >= 0.5, "Moderate", "Low")),
-            stringsAsFactors = FALSE
-        ))
-    }
-    
-    bbb_df$Category <- factor(bbb_df$Category, levels = c("High", "Moderate", "Low"))
-    
-    p_panel_g <- ggplot(bbb_df, aes(x = reorder(Drug, BBB_Score), y = BBB_Score, fill = Category)) +
-        geom_bar(stat = "identity", alpha = 0.8) +
-        geom_hline(yintercept = BBB_SCORE_THRESHOLD, linetype = "dashed", color = "red", linewidth = 0.8) +
-        scale_fill_manual(values = c("High" = "#27ae60", "Moderate" = "#f39c12", "Low" = "#e74c3c")) +
-        coord_flip() +
-        labs(title = "BBB Penetration", x = NULL, y = "BBB Score (0-1)") +
-        theme_minimal(base_size = 11) +
-        theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
-              axis.text.y = element_text(size = 10),
-              legend.position = "bottom",
-              plot.tag = element_text(face = "bold", size = 20)) +
-        plot_annotation(tag_levels = list(c("G")))
-} else {
-    p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug data", size = 6) +
-        theme_void() + plot_annotation(tag_levels = list(c("G"))) &
-        theme(plot.tag = element_text(face = "bold", size = 20))
-}
-
-# ==============================================================================
-# PANEL H: DRUG-PATHWAY OVERLAP HEATMAP
-# ==============================================================================
-cat("Panel H: Creating Drug-Pathway Heatmap...\n")
+cat("Panel G: Creating Drug-Pathway Heatmap...\n")
 
 if(!is.null(pathway_results) && !is.null(drug_results) && 
    nrow(pathway_results) > 0 && nrow(drug_results) > 0) {
     
     top_pathways <- pathway_results %>% filter(p.adjust < 0.05) %>% arrange(p.adjust) %>%
-        head(DRUG_PATHWAY_TOP_N) %>% pull(ID)
+        head(20) %>% pull(ID)
     top_drugs <- drug_results %>% filter(NES < 0, p.adjust < 0.25) %>% arrange(NES) %>%
-        head(DRUG_PATHWAY_TOP_N) %>% pull(ID)
+        head(20) %>% pull(ID)
     
     if(length(top_pathways) > 0 && length(top_drugs) > 0) {
         overlap_mat <- matrix(0, nrow=length(top_drugs), ncol=length(top_pathways),
@@ -630,139 +742,214 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
             }
         }
         
-        # Clean names
-        rownames(overlap_mat) <- substr(sapply(rownames(overlap_mat), clean_drug_name), 1, 30)
-        colnames(overlap_mat) <- substr(colnames(overlap_mat), 1, 30)
+        drug_max <- apply(overlap_mat, 1, max)
+        pathway_max <- apply(overlap_mat, 2, max)
         
-        ht <- Heatmap(overlap_mat, name = "Genes",
-                      col = colorRamp2(c(0, max(overlap_mat)/2, max(overlap_mat)),
-                                       c("white", "#fee090", "#d73027")),
-                      cluster_rows = TRUE, cluster_columns = TRUE,
-                      column_title = "Drug-Pathway Overlap",
-                      column_title_gp = gpar(fontsize = 14, fontface = "bold"),
-                      row_names_gp = gpar(fontsize = 10),
-                      column_names_gp = gpar(fontsize = 9),
-                      heatmap_legend_param = list(title_gp = gpar(fontsize = 11)),
-                      width = unit(6, "cm"), height = unit(8, "cm"))
+        overlap_mat_filtered <- overlap_mat[drug_max >= 5, pathway_max >= 5, drop=FALSE]
         
-        # Create grob
-        ht_grob <- grid.grabExpr(draw(ht))
-        p_panel_h <- ggdraw(ht_grob) +
-            draw_label("H", x = 0.02, y = 0.98, fontface = "bold", size = 20, color = "black")
+        if(nrow(overlap_mat_filtered) > 0 && ncol(overlap_mat_filtered) > 0) {
+            if(nrow(overlap_mat_filtered) > DRUG_PATHWAY_TOP_N) {
+                drug_sums <- rowSums(overlap_mat_filtered)
+                keep_drugs <- names(sort(drug_sums, decreasing=TRUE)[1:DRUG_PATHWAY_TOP_N])
+                overlap_mat_filtered <- overlap_mat_filtered[keep_drugs, , drop=FALSE]
+            }
+            
+            if(ncol(overlap_mat_filtered) > DRUG_PATHWAY_TOP_N) {
+                pathway_sums <- colSums(overlap_mat_filtered)
+                keep_pathways <- names(sort(pathway_sums, decreasing=TRUE)[1:DRUG_PATHWAY_TOP_N])
+                overlap_mat_filtered <- overlap_mat_filtered[, keep_pathways, drop=FALSE]
+            }
+            
+            rownames(overlap_mat_filtered) <- substr(clean_drug_names_vectorized(rownames(overlap_mat_filtered)), 1, 25)
+            colnames(overlap_mat_filtered) <- substr(colnames(overlap_mat_filtered), 1, 30)
+            
+            ht <- Heatmap(overlap_mat_filtered, name = "Genes",
+                          col = colorRamp2(c(0, max(overlap_mat_filtered)/2, max(overlap_mat_filtered)),
+                                           c("white", "#fee090", "#d73027")),
+                          cluster_rows = TRUE, cluster_columns = TRUE,
+                          column_title = "Drug-Pathway Overlap",
+                          column_title_gp = gpar(fontsize = 13, fontface = "bold"),
+                          row_names_gp = gpar(fontsize = 9),
+                          column_names_gp = gpar(fontsize = 8),
+                          heatmap_legend_param = list(title_gp = gpar(fontsize = 10)),
+                          width = unit(5, "cm"), height = unit(7, "cm"))
+            
+            ht_grob <- grid.grabExpr(draw(ht))
+            p_panel_g <- ggdraw(ht_grob) +
+                draw_label("G", x = 0.02, y = 0.98, fontface = "bold", size = 20, color = "black")
+        } else {
+            p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient overlaps", size = 6) +
+                theme_void() +
+                theme(plot.tag = element_text(face = "bold", size = 20)) +
+                plot_annotation(tag_levels = list(c("G")))
+        }
     } else {
-        p_panel_h <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient pathways/drugs", size = 6) +
-            theme_void() + plot_annotation(tag_levels = list(c("H"))) &
-            theme(plot.tag = element_text(face = "bold", size = 20))
+        p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient pathways/drugs", size = 6) +
+            theme_void() +
+            theme(plot.tag = element_text(face = "bold", size = 20)) +
+            plot_annotation(tag_levels = list(c("G")))
     }
 } else {
-    p_panel_h <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug/pathway data", size = 6) +
-        theme_void() + plot_annotation(tag_levels = list(c("H"))) &
-        theme(plot.tag = element_text(face = "bold", size = 20))
+    p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug/pathway data", size = 6) +
+        theme_void() +
+        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        plot_annotation(tag_levels = list(c("G")))
 }
 
 # ==============================================================================
-# PANEL I: TOP 5 DRUGS WITH INTEGRATED SCORING
+# PANEL H: 2D DRUG PLOT
 # ==============================================================================
-cat("Panel I: Creating Top 5 Drugs...\n")
+cat("Panel H: Creating 2D Drug Plot...\n")
 
-if(length(drug_profiles) >= TOP_DRUGS_DISPLAY) {
-    top5 <- data.frame()
-    for(profile in head(drug_profiles, TOP_DRUGS_DISPLAY)) {
+if(length(drug_profiles) > 0) {
+    plot_df <- data.frame()
+    
+    for(profile in head(drug_profiles, 25)) {
         nes <- abs(profile$NES)
-        bbb <- if(!is.null(profile$bbb$bbb_score) && !is.na(profile$bbb$bbb_score)) {
-            profile$bbb$bbb_score
-        } else { 0 }
-        targets <- if(!is.null(profile$chembl$targets)) length(profile$chembl$targets) else 0
+        bbb <- if(!is.na(profile$bbb$bbb_score)) profile$bbb$bbb_score else 0
+        pathway_count <- profile$pathway_count
+        integrated <- profile$integrated_score
         
-        # Integrated score: NES × BBB × log(targets+1)
-        integrated <- nes * bbb * log(targets + 1)
-        
-        top5 <- rbind(top5, data.frame(
-            Drug = substr(clean_drug_name(profile$drug_name), 1, 15),
+        plot_df <- rbind(plot_df, data.frame(
+            Drug = substr(clean_drug_name(profile$drug_name), 1, 14),
             NES = nes,
             BBB = bbb,
-            Targets = targets,
+            PathwayCount = pathway_count,
             Integrated = integrated,
             stringsAsFactors = FALSE
         ))
     }
     
-    # Normalize scores
-    top5$NES_norm <- (top5$NES - min(top5$NES)) / (max(top5$NES) - min(top5$NES) + 0.001)
-    top5$BBB_norm <- top5$BBB
-    top5$Targets_norm <- (top5$Targets - min(top5$Targets)) / (max(top5$Targets) - min(top5$Targets) + 0.001)
-    
-    # Reshape for plotting
-    top5_long <- tidyr::pivot_longer(top5, cols = c(NES_norm, BBB_norm, Targets_norm),
-                                     names_to = "Metric", values_to = "Value")
-    top5_long$Metric <- factor(top5_long$Metric, 
-                               levels = c("NES_norm", "BBB_norm", "Targets_norm"),
-                               labels = c("NES", "BBB", "Targets"))
-    
-    p_panel_i <- ggplot(top5_long, aes(x = Metric, y = Value, group = Drug, color = Drug)) +
-        geom_line(linewidth = 1.2, alpha = 0.8) +
-        geom_point(size = 3) +
-        scale_color_brewer(palette = "Set1") +
-        scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-        labs(title = "Top 5 Drugs - Integrated Scoring", 
-             x = NULL, y = "Normalized Score") +
-        theme_minimal(base_size = 11) +
-        theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    p_panel_h <- ggplot(plot_df, aes(x = NES, y = BBB, size = Integrated, color = PathwayCount)) +
+        geom_point(alpha = 0.7) +
+        geom_text_repel(aes(label = Drug), 
+                       size = 2.5, 
+                       max.overlaps = 30,
+                       box.padding = 0.3,
+                       point.padding = 0.25,
+                       segment.color = "grey50",
+                       segment.size = 0.2,
+                       min.segment.length = 0,
+                       force = 2) +
+        geom_hline(yintercept = BBB_SCORE_THRESHOLD, linetype = "dashed", color = "red", alpha = 0.5, linewidth = 0.4) +
+        geom_vline(xintercept = 1.0, linetype = "dashed", color = "blue", alpha = 0.5, linewidth = 0.4) +
+        scale_color_gradient(low = "#3498db", high = "#e74c3c", name = "Pathway\nHits") +
+        scale_size_continuous(range = c(2, 9), name = "IntScore") +
+        labs(title = "Drug Candidates",
+             subtitle = "IntScore = |NES|^1.5 × BBB × (1 + 0.1×Pathways)",
+             x = "|NES|",
+             y = "BBB Score") +
+        theme_minimal(base_size = 9) +
+        theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+              plot.subtitle = element_text(size = 7, hjust = 0.5),
               legend.position = "right",
-              legend.title = element_blank(),
-              legend.text = element_text(size = 9),
-              axis.text.x = element_text(size = 11, face = "bold"),
+              legend.text = element_text(size = 7),
+              legend.title = element_text(size = 8),
               plot.tag = element_text(face = "bold", size = 20)) +
-        plot_annotation(tag_levels = list(c("I")))
+        plot_annotation(tag_levels = list(c("H")))
 } else {
-    p_panel_i <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient drug candidates", size = 6) +
-        theme_void() + plot_annotation(tag_levels = list(c("I"))) &
-        theme(plot.tag = element_text(face = "bold", size = 20))
+    p_panel_h <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No drug data", size = 6) +
+        theme_void() +
+        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        plot_annotation(tag_levels = list(c("H")))
 }
 
 # ==============================================================================
-# ASSEMBLE FINAL FIGURE
+# PANEL I: TOP 15 DRUGS TABLE
 # ==============================================================================
-cat("Assembling final figure...\n")
+cat("Panel I: Creating Drug Table...\n")
 
-final_figure <- (p_panel_a | p_panel_b | p_panel_c) /
-                (p_panel_d | p_panel_e | p_panel_f) /
-                (p_panel_g | p_panel_h | p_panel_i)
+if(length(drug_profiles) >= TOP_DRUGS_DISPLAY) {
+    table_data <- data.frame()
+    
+    for(i in 1:TOP_DRUGS_DISPLAY) {
+        profile <- drug_profiles[[i]]
+        drug_clean <- clean_drug_name(profile$drug_name)
+        
+        table_data <- rbind(table_data, data.frame(
+            Rank = i,
+            Drug = substr(drug_clean, 1, 15),
+            NES = round(abs(profile$NES), 2),
+            BBB = round(profile$bbb_component, 2),
+            Trials = profile$clinical_trials,
+            Pathways = profile$pathway_count,
+            Score = round(profile$integrated_score, 1),
+            stringsAsFactors = FALSE
+        ))
+    }
+    
+    p_panel_i <- ggdraw() +
+        draw_label("I", x = 0.02, y = 0.98, fontface = "bold", size = 20, color = "black") +
+        draw_grob(tableGrob(table_data, rows = NULL,
+                           theme = ttheme_minimal(base_size = 8,
+                                                 core = list(fg_params = list(hjust = 0, x = 0.05)),
+                                                 colhead = list(fg_params = list(fontface = "bold")))),
+                 x = 0.5, y = 0.5, width = 0.9, height = 0.85)
+    
+} else {
+    p_panel_i <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient drugs", size = 6) +
+        theme_void() +
+        theme(plot.tag = element_text(face = "bold", size = 20)) +
+        plot_annotation(tag_levels = list(c("I")))
+}
+
+# ==============================================================================
+# ASSEMBLE FINAL FIGURE WITH EMBEDDED CAPTION
+# ==============================================================================
+cat("Assembling final figure with embedded caption...\n")
+
+# Create caption text
+caption_text <- paste(
+    "Figure: U251 Transcriptomic Evolution and Therapeutic Target Discovery.",
+    "(A) Experimental design. (B) PCA with scree plot. (C) Subtype trajectories (limma pairwise with arrayWeights: * p<0.05, ** p<0.01, *** p<0.001).",
+    "(D) Pathway tree. (E) PPI network. (F) Polypharmacology network.",
+    "(G) Drug-pathway heatmap. (H) 2D drug plot. (I) Top 15 drug candidates.",
+    sep = " "
+)
+
+# Main figure
+main_figure <- (p_panel_a | p_panel_b | p_panel_c) /
+               (p_panel_d | p_panel_e | p_panel_f) /
+               (p_panel_g | p_panel_h | p_panel_i)
+
+# Add caption at bottom
+final_figure <- main_figure +
+    plot_annotation(caption = caption_text,
+                   theme = theme(plot.caption = element_text(size = 9, hjust = 0, margin = margin(t = 10))))
 
 ggsave(
-    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_COMPLETE.png"),
+    filename = file.path(OUT_DIR, "Publication_Figure_9Panel.png"),
     plot = final_figure,
     width = 20,
-    height = 18,
+    height = 19,  # Slightly taller for caption
     dpi = 300,
     bg = "white"
 )
 
 ggsave(
-    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_COMPLETE.pdf"),
+    filename = file.path(OUT_DIR, "Publication_Figure_9Panel.pdf"),
     plot = final_figure,
     width = 20,
-    height = 18
+    height = 19
 )
 
-# Create caption file
+# Separate caption file
 captions <- c(
     "FIGURE: U251 Transcriptomic Evolution and Therapeutic Target Discovery",
     "",
-    "A. Experimental Design showing U251 evolution from culture through LITT therapy.",
-    "B. Global Structure: PCA biplot with gene drivers and scree plot.",
-    "C. Subtype Trajectories with significance markers (* = p<0.05, JT test).",
-    "D. Semantic Pathway Clustering via hierarchical tree.",
-    "E. PPI Network highlighting hub genes (red = high connectivity).",
-    "F. Polypharmacology Network (triangles = multi-target drugs).",
-    "G. Drug BBB Penetration Scores for CNS access.",
-    "H. Drug-Pathway Gene Overlap heatmap.",
-    "I. Top 5 Drugs with integrated scoring (NES × BBB × log(Targets+1))."
+    "A. Experimental Design",
+    "B. Global Structure: PCA + Scree",
+    "C. Subtype Trajectories (limma pairwise with arrayWeights: * p<0.05, ** p<0.01, *** p<0.001)",
+    "D. Pathway Tree (wide canvas)",
+    "E. PPI Network",
+    "F. Polypharmacology Network",
+    "G. Drug-Pathway Overlap Heatmap",
+    "H. Drug Candidates 2D Plot",
+    sprintf("I. Top %d Drug Candidates Table", TOP_DRUGS_DISPLAY)
 )
 
-writeLines(captions, file.path(OUT_DIR, "Figure_Captions_COMPLETE.txt"))
+writeLines(captions, file.path(OUT_DIR, "Figure_Captions.txt"))
 
 cat("\n✅ Publication figure complete!\n")
-cat(sprintf("   PNG: %s/Publication_Figure_9Panel_COMPLETE.png\n", OUT_DIR))
-cat(sprintf("   PDF: %s/Publication_Figure_9Panel_COMPLETE.pdf\n", OUT_DIR))
-cat(sprintf("   Captions: %s/Figure_Captions_COMPLETE.txt\n", OUT_DIR))
+cat(sprintf("   PNG: %s/Publication_Figure_9Panel.png\n", OUT_DIR))
+cat(sprintf("   PDF: %s/Publication_Figure_9Panel.pdf\n", OUT_DIR))

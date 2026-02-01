@@ -2,7 +2,7 @@
 set -e
 
 # ==============================================================================
-# SCRIPT: create_refs_final.sh (Includes STRING v12.0)
+# SCRIPT: create_refs_final.sh (Includes STRING v12.0 + Merged GMTs)
 # CONTEXT: Run INSIDE 'ANALYSIS'.
 # ==============================================================================
 
@@ -107,6 +107,7 @@ H_BRAIN="hs.brain_gmt_v2.gmt"
 H_DBSIG="hs.dsigdb.v1.0.gmt"
 H_GOBP="hs.gobp.v2023.2.gmt"
 H_KEGG="hs.kegg.v2023.2.gmt"
+H_COMBINED="combined_human.gmt" # NEW Combined File
 
 if [ ! -s "$H_HALLMARK" ]; then
     wget -O "$H_HALLMARK" "https://data.broadinstitute.org/gsea-msigdb/msigdb/release/2023.2.Hs/h.all.v2023.2.Hs.symbols.gmt"
@@ -140,6 +141,15 @@ if [ ! -s "$H_KEGG" ]; then
     check_valid_file "$H_KEGG" || exit 1
 else echo "  [SKIP] Human KEGG exists."; fi
 
+# --- MERGE HUMAN (EXCLUDING DSIGDB) ---
+echo "  [MERGE] Creating Combined Human GMT (No DSigDB)..."
+# Priority: Hallmark > Brain > KEGG > C2 > GO
+cat "$H_HALLMARK" "$H_BRAIN" "$H_KEGG" "$H_C2" "$H_GOBP" > "$H_COMBINED.tmp"
+awk '!seen[$1]++' "$H_COMBINED.tmp" > "$H_COMBINED"
+rm "$H_COMBINED.tmp"
+H_COUNT=$(wc -l < "$H_COMBINED")
+echo "      -> Created $H_COMBINED ($H_COUNT unique sets)"
+
 
 # --- RAT ---
 cd "$PATHWAY_RAT" || exit 1
@@ -147,6 +157,7 @@ R_BRAIN="rn.brain_gmt_v2.gmt"
 R_HALLMARK="rn.hallmark.v2023.2.gmt"
 R_GOBP="rn.gobp.v2023.2.gmt"
 R_KEGG="rn.kegg.v2023.2.gmt"
+R_COMBINED="combined_rat.gmt" # NEW Combined File
 
 if [ ! -s "$R_BRAIN" ]; then
     wget -O "$R_BRAIN" "https://raw.githubusercontent.com/hagenaue/Brain_GMT/main/BrainGMTv2_RatOrthologs.gmt.txt"
@@ -222,6 +233,15 @@ else
     echo "  [SKIP] Rat generated sets exist."
 fi
 
+# --- MERGE RAT ---
+echo "  [MERGE] Creating Combined Rat GMT..."
+# Priority: Hallmark > Brain > KEGG > GO:BP
+cat "$R_HALLMARK" "$R_BRAIN" "$R_KEGG" "$R_GOBP" > "$R_COMBINED.tmp"
+awk '!seen[$1]++' "$R_COMBINED.tmp" > "$R_COMBINED"
+rm "$R_COMBINED.tmp"
+R_COUNT=$(wc -l < "$R_COMBINED")
+echo "      -> Created $R_COMBINED ($R_COUNT unique sets)"
+
 # ==============================================================================
 # SECTION 4: STRING PPI NETWORK (v12.0)
 # ==============================================================================
@@ -250,5 +270,7 @@ fi
 
 echo "========================================================"
 echo "Setup Complete!"
-echo "STRING DB located at: $STRING_DIR"
+echo "Combined Human GMT: $PATHWAY_HUMAN/$H_COMBINED"
+echo "Combined Rat GMT:   $PATHWAY_RAT/$R_COMBINED"
+echo "STRING DB located:  $STRING_DIR"
 echo "========================================================"

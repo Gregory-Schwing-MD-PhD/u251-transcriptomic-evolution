@@ -1,13 +1,4 @@
 #!/bin/bash
-#SBATCH -q primary
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH --time=3:00:00
-#SBATCH --job-name=pub_figure
-#SBATCH --output=publication_figure_%j.out
-#SBATCH --error=publication_figure_%j.err
 
 set -euo pipefail
 
@@ -111,7 +102,7 @@ singularity exec --bind "$PWD:/data" --pwd /data "$IMG_PATH" \
     "/data/$STRING_DIR" \
     "/data/$OUT_DIR" \
     "$TARGET_CONTRAST" \
-    "/data/$METADATA_FILE"  # PASSED AS 7TH ARGUMENT
+    "/data/$METADATA_FILE"
 
 exit_code=$?
 
@@ -171,18 +162,23 @@ echo ""
 echo "Panel Layout (3×3 grid):"
 echo "  A. Experimental Design (Gemini visual abstract)"
 echo "  B. Global Structure (PCA biplot + scree plot)"
-echo "  C. Subtype Trajectories (with significance markers)"
+echo "  C. Subtype Trajectories (limma pairwise with arrayWeights)"
 echo "  D. Semantic Pathway Clustering (tree plot)"
 echo "  E. Protein-Protein Interaction Network"
 echo "  F. Polypharmacology Network"
-echo "  G. Drug BBB Penetration Scores"
-echo "  H. Drug-Pathway Gene Overlap Heatmap"
-echo "  I. Top 5 Drug Candidates (integrated scoring)"
+echo "  G. Drug-Pathway Gene Overlap Heatmap"
+echo "  H. Drug Candidates 2D Plot (BBB × NES)"
+echo "  I. Top 15 Drug Candidates Table"
 echo ""
 echo "📝 PANEL DESCRIPTIONS:"
 echo ""
 cat "$OUT_DIR/Figure_Captions.txt"
 echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo "Statistical Methods (Panel C):"
+echo "  • Limma linear modeling with arrayWeights"
+echo "  • All pairwise contrasts tested"
+echo "  • Significance: * p<0.05, ** p<0.01, *** p<0.001"
 echo "════════════════════════════════════════════════════════════════"
 echo "                    ANALYSIS COMPLETE"
 echo "════════════════════════════════════════════════════════════════"
