@@ -170,4 +170,9 @@ RUN R -e "install.packages('xml2', repos='http://cran.rstudio.com/')"
 # # ------------------------------------------------------------------------------
 RUN R -e "install.packages(c('ggpubr', 'rstatix', 'UpSetR'), repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# LAYER 24: Publication Figure Generation (v2026.02 - Complete)
+# ------------------------------------------------------------------------------
+RUN R -e "install.packages(c('cowplot', 'magick', 'tibble', 'gridExtra'), repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
