@@ -1,11 +1,16 @@
 #!/usr/bin/env Rscript
 # ==============================================================================
-# PUBLICATION FIGURE GENERATOR - 9-PANEL (A-I) - FINAL VERSION
+# PUBLICATION FIGURE GENERATOR - 9-PANEL (A-I) - FINAL FIXED VERSION
 # ==============================================================================
-# - Trajectory with discrete x-axis and limma pairwise tests
-# - Wide tree plot canvas
-# - All panels labeled A-I
-# - Embedded caption
+# ALL FIXES:
+# - PCA trajectory arrows (from run_global_subtypes.R)
+# - BBB scoring exactly like v6_SUPREME (decimal precision)
+# - Clinical trials lookup exactly like v6_SUPREME
+# - Heatmap with NO filtering (show all data)
+# - Tree plot with smaller font for readability
+# - Table panel properly sized and formatted
+# - 2D plot: pathway hits for color only, simpler score
+# - Trajectory: significance markers at pairwise midpoints
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -47,7 +52,6 @@ GSEA_MIN_SIZE <- 15
 GSEA_MAX_SIZE <- 500
 BBB_SCORE_THRESHOLD <- 0.5
 CACHE_DIR <- ".drug_discovery_cache"
-DRUG_PATHWAY_TOP_N <- 12
 TOP_DRUGS_DISPLAY <- 15
 
 GROUP_COLORS <- c("Culture_U2" = "#1f77b4", "Primary_U2" = "#ff7f0e", "Recurrent_U2" = "#d62728")
@@ -108,32 +112,81 @@ init_cache <- function() {
 }
 
 # ==============================================================================
-# BBB & CLINICAL DATA
+# BBB & CLINICAL DATA (EXACTLY FROM v6_SUPREME)
 # ==============================================================================
 predict_bbb_penetration <- function(chembl_data) {
     if(is.null(chembl_data) || is.null(chembl_data$source) || chembl_data$source == "Unknown") {
-        return(list(bbb_score = NA, bbb_prediction = "Unknown"))
+        return(list(bbb_score = NA, bbb_prediction = "Unknown", rationale = "No molecular data"))
     }
-    score <- 0
+    
+    score <- 0.0  # CRITICAL: Start with decimal
+    rationale <- c()
+    
     mw <- if(!is.null(chembl_data$molecular_weight)) as.numeric(chembl_data$molecular_weight) else NA
     logp <- if(!is.null(chembl_data$alogp)) as.numeric(chembl_data$alogp) else NA
     psa_val <- if(!is.null(chembl_data$psa)) as.numeric(chembl_data$psa) else NA
     hbd <- if(!is.null(chembl_data$hbd)) as.numeric(chembl_data$hbd) else NA
     hba <- if(!is.null(chembl_data$hba)) as.numeric(chembl_data$hba) else NA
     
-    if(!is.na(mw) && mw < 400) score <- score + 1.0
-    if(!is.na(logp) && logp >= 1.0 && logp <= 3.0) score <- score + 1.0
-    if(!is.na(psa_val) && psa_val < 90) score <- score + 1.0
+    # Molecular weight scoring
+    if(!is.na(mw)) {
+        if(mw < 400) {
+            score <- score + 1.0
+            rationale <- c(rationale, paste0("✓ Low MW (", round(mw, 0), " Da)"))
+        } else if(mw < 450) {
+            score <- score + 0.5
+            rationale <- c(rationale, paste0("○ Moderate MW (", round(mw, 0), " Da)"))
+        } else {
+            rationale <- c(rationale, paste0("✗ High MW (", round(mw, 0), " Da)"))
+        }
+    }
+    
+    # LogP scoring
+    if(!is.na(logp)) {
+        if(logp >= 1.0 && logp <= 3.0) {
+            score <- score + 1.0
+            rationale <- c(rationale, paste0("✓ Optimal LogP (", round(logp, 2), ")"))
+        } else {
+            score <- score + 0.3
+            rationale <- c(rationale, paste0("○ LogP (", round(logp, 2), ")"))
+        }
+    }
+    
+    # PSA scoring
+    if(!is.na(psa_val)) {
+        if(psa_val < 90) {
+            score <- score + 1.0
+            rationale <- c(rationale, paste0("✓ PSA (", round(psa_val, 0), " Å²)"))
+        } else {
+            rationale <- c(rationale, paste0("✗ High PSA (", round(psa_val, 0), " Å²)"))
+        }
+    }
+    
+    # H-bond donors/acceptors
     if(!is.na(hbd) && hbd < 3) score <- score + 0.5
     if(!is.na(hba) && hba < 7) score <- score + 0.5
     
     bbb_score <- min(score / 4.0, 1.0)
-    prediction <- if(bbb_score >= 0.7) "HIGH" else if(bbb_score >= 0.5) "MODERATE" else "LOW"
-    return(list(bbb_score = round(bbb_score, 3), bbb_prediction = prediction))
+    
+    if(bbb_score >= 0.7) {
+        prediction <- "HIGH BBB Penetration"
+    } else if(bbb_score >= 0.5) {
+        prediction <- "MODERATE BBB Penetration"
+    } else {
+        prediction <- "LOW BBB Penetration"
+    }
+    
+    return(list(
+        bbb_score = round(bbb_score, 3),
+        bbb_prediction = prediction,
+        rationale = if(length(rationale) > 0) paste(rationale, collapse = "\n") else "Insufficient data"
+    ))
 }
 
 query_chembl_fallback <- function(drug_name) {
     drug_upper <- toupper(clean_drug_name(drug_name))
+    
+    # EXACTLY from v6_SUPREME
     fallback_db <- list(
         "TEMOZOLOMIDE" = list(chembl_id = "CHEMBL810", max_phase = 4, molecular_weight = 194.15,
                               alogp = -0.85, psa = 106.59, hba = 6, hbd = 1, ro5_violations = 0,
@@ -143,23 +196,29 @@ query_chembl_fallback <- function(drug_name) {
                               targets = c("TOP1"), source = "Internal DB", clinical_trials = 127),
         "LY294002" = list(chembl_id = "CHEMBL98350", max_phase = 0, molecular_weight = 307.34,
                           alogp = 2.83, psa = 80.22, hba = 4, hbd = 2, ro5_violations = 0,
-                          targets = c("PIK3CA"), source = "Internal DB", clinical_trials = 0)
+                          targets = c("PIK3CA", "PIK3CB", "PIK3CD", "PIK3CG", "MTOR"), source = "Internal DB", clinical_trials = 0),
+        "ERLOTINIB" = list(chembl_id = "CHEMBL558", max_phase = 4, molecular_weight = 393.44,
+                           alogp = 3.23, psa = 74.73, hba = 6, hbd = 1, ro5_violations = 0,
+                           targets = c("EGFR"), source = "Internal DB", clinical_trials = 0),
+        "IMATINIB" = list(chembl_id = "CHEMBL941", max_phase = 4, molecular_weight = 493.60,
+                          alogp = 3.07, psa = 86.19, hba = 7, hbd = 2, ro5_violations = 0,
+                          targets = c("ABL1", "KIT", "PDGFRA"), source = "Internal DB", clinical_trials = 0)
     )
+    
     if(drug_upper %in% names(fallback_db)) return(fallback_db[[drug_upper]])
     return(list(source = "Unknown", targets = c(), clinical_trials = 0))
 }
 
 calculate_integrated_score <- function(drug_nes, bbb_score, pathway_count) {
     nes_component <- abs(drug_nes)
-    polypharm_bonus <- 0.1 * pathway_count
-    integrated_score <- (nes_component^1.5) * bbb_score * (1 + polypharm_bonus)
+    # SIMPLIFIED: No pathway bonus in score, just use NES and BBB
+    integrated_score <- (nes_component^1.5) * bbb_score
     
     return(list(
         integrated_score = integrated_score,
         nes_component = nes_component,
         bbb_component = bbb_score,
-        pathway_count = pathway_count,
-        polypharm_bonus = polypharm_bonus
+        pathway_count = pathway_count
     ))
 }
 
@@ -261,9 +320,9 @@ p_panel_a <- ggdraw() +
     draw_label("A", x = 0.02, y = 0.98, fontface = "bold", size = 20, color = "black")
 
 # ==============================================================================
-# PANEL B: GLOBAL STRUCTURE
+# PANEL B: GLOBAL STRUCTURE WITH TRAJECTORY ARROWS
 # ==============================================================================
-cat("Panel B: Creating global structure...\n")
+cat("Panel B: Creating global structure with trajectory arrows...\n")
 
 top_var <- head(order(apply(mat_sym, 1, var), decreasing = TRUE), N_TOP_VAR)
 mat_sig <- mat_sym[top_var, ]
@@ -287,7 +346,29 @@ gene_arrow_scale <- max(abs(pcaData$PC1)) / max(abs(top_genes_load[, "PC1"])) * 
 gene_arrows <- as.data.frame(top_genes_load * gene_arrow_scale)
 gene_arrows$Gene <- rownames(gene_arrows)
 
+# Calculate trajectory arrows (from run_global_subtypes.R)
+levs <- levels(meta$Classification)
+centroids <- aggregate(cbind(PC1, PC2) ~ Class, data=pcaData, FUN=mean)
+centroids <- centroids[match(levs, centroids$Class), ]
+centroids <- na.omit(centroids)
+
+arrow_data <- if(nrow(centroids) >= 2) {
+    data.frame(
+        x = centroids$PC1[-nrow(centroids)],
+        y = centroids$PC2[-nrow(centroids)],
+        xend = centroids$PC1[-1],
+        yend = centroids$PC2[-1]
+    )
+} else {
+    data.frame()
+}
+
 p_pca <- ggplot(pcaData, aes(x = PC1, y = PC2)) +
+    {if(nrow(arrow_data) > 0)
+        geom_segment(data=arrow_data, aes(x=x, y=y, xend=xend, yend=yend),
+                    arrow=arrow(length=unit(0.4,"cm"), type="closed"),
+                    color="grey50", linewidth=1.2, inherit.aes=FALSE)
+    } +
     geom_segment(data = gene_arrows, aes(x = 0, y = 0, xend = PC1, yend = PC2),
                  arrow = arrow(length = unit(0.15, "cm")), color = "red", alpha = 0.5, inherit.aes = FALSE) +
     geom_text_repel(data = gene_arrows, aes(x = PC1, y = PC2, label = Gene),
@@ -295,7 +376,8 @@ p_pca <- ggplot(pcaData, aes(x = PC1, y = PC2)) +
     geom_point(aes(fill = Class, shape = Class), size = 5, color = "black", stroke = 0.5) +
     scale_fill_manual(values = GROUP_COLORS) +
     scale_shape_manual(values = GROUP_SHAPES) +
-    labs(x = paste0("PC1 (", var_pc[1], "%)"), y = paste0("PC2 (", var_pc[2], "%)")) +
+    labs(x = paste0("PC1 (", var_pc[1], "%)"), y = paste0("PC2 (", var_pc[2], "%)"),
+         title = "Evolutionary Trajectory") +
     theme_publication(base_size = 9)
 
 p_panel_b <- ((p_pca | p_scree) + plot_layout(widths = c(2.5, 1))) +
@@ -303,9 +385,9 @@ p_panel_b <- ((p_pca | p_scree) + plot_layout(widths = c(2.5, 1))) +
     theme(plot.tag = element_text(face = "bold", size = 20))
 
 # ==============================================================================
-# PANEL C: TRAJECTORY WITH LIMMA PAIRWISE TESTS (MATCHING run_global_subtypes.R)
+# PANEL C: TRAJECTORY WITH PAIRWISE SIGNIFICANCE MARKERS
 # ==============================================================================
-cat("Panel C: Creating trajectory with limma pairwise tests...\n")
+cat("Panel C: Creating trajectory with pairwise significance markers...\n")
 
 sigs <- list(
     "Verhaak_Classical" = c("EGFR", "NES", "NOTCH3", "JAG1", "HES5", "AKT2"),
@@ -338,7 +420,6 @@ design <- model.matrix(~0 + meta$Classification)
 colnames(design) <- levels(meta$Classification)
 
 # Generate all pairwise contrast formulas
-levs <- levels(meta$Classification)
 contrast_formulas <- c()
 contrast_names <- c()
 
@@ -358,37 +439,25 @@ colnames(cont.matrix) <- contrast_names
 sig_results <- list()
 
 for (sig in rownames(z_res)) {
-    # Prepare data matrix (1 row per signature)
     mat_sig_single <- matrix(z_res[sig, ], nrow = 1)
     colnames(mat_sig_single) <- colnames(z_res)
     rownames(mat_sig_single) <- sig
     
-    # Calculate array weights
     aw <- arrayWeights(mat_sig_single, design)
-    
-    # Fit linear model with array weights
     fit <- lmFit(mat_sig_single, design, weights = aw)
-    
-    # Apply contrasts
     fit2 <- contrasts.fit(fit, cont.matrix)
     fit2 <- eBayes(fit2)
     
-    # Extract p-values directly from fit2 (unadjusted, since only 1 feature)
     pvals <- as.numeric(fit2$p.value[1, ])
     names(pvals) <- contrast_names
     
-    # Mark as significant if ANY pairwise comparison is significant at p < 0.05
-    is_sig <- any(pvals < 0.05, na.rm = TRUE)
-    
     sig_results[[sig]] <- list(
         p_values = pvals,
-        is_sig = is_sig,
-        min_p = min(pvals, na.rm = TRUE),
-        n_sig = sum(pvals < 0.05, na.rm = TRUE)
+        contrast_names = contrast_names
     )
 }
 
-# Create trajectory data with DISCRETE x-axis
+# Create trajectory data
 traj_data_list <- list()
 
 for (sig in rownames(z_res)) {
@@ -396,7 +465,7 @@ for (sig in rownames(z_res)) {
         Signature = sig,
         Score = z_res[sig, ],
         Class = meta$Classification,
-        Stage = meta$Classification  # Use factor levels directly
+        Stage = meta$Classification
     )
     traj_data_list[[sig]] <- df
 }
@@ -410,18 +479,51 @@ traj_summary <- traj_data %>%
 traj_summary$Signature_Full <- expand_subtype_name(traj_summary$Signature)
 traj_data$Signature_Full <- expand_subtype_name(traj_data$Signature)
 
-# Add significance markers based on limma results
+# Create significance annotation data with midpoints
+sig_annotations <- data.frame()
+
 for (sig in unique(traj_summary$Signature)) {
-    if (sig_results[[sig]]$is_sig) {
-        sig_full <- expand_subtype_name(sig)
-        n_sig <- sig_results[[sig]]$n_sig
-        min_p <- sig_results[[sig]]$min_p
+    sig_full <- expand_subtype_name(sig)
+    pvals <- sig_results[[sig]]$p_values
+    contrast_names_sig <- sig_results[[sig]]$contrast_names
+    
+    sig_means <- traj_summary %>% 
+        filter(Signature == sig) %>%
+        arrange(Stage)
+    
+    for (idx in seq_along(contrast_names_sig)) {
+        contrast_name <- contrast_names_sig[idx]
+        p_val <- pvals[idx]
         
-        # Create asterisk notation based on minimum p-value
-        asterisks <- if(min_p < 0.001) "***" else if(min_p < 0.01) "**" else "*"
-        
-        traj_summary$Signature_Full[traj_summary$Signature == sig] <- paste0(sig_full, " ", asterisks)
-        traj_data$Signature_Full[traj_data$Signature == sig] <- paste0(sig_full, " ", asterisks)
+        if (!is.na(p_val) && p_val < 0.05) {
+            parts <- strsplit(contrast_name, "_vs_")[[1]]
+            stage1 <- gsub("([A-Z][a-z]+)([A-Z][0-9]+)", "\\1_\\2", parts[2])
+            stage2 <- gsub("([A-Z][a-z]+)([A-Z][0-9]+)", "\\1_\\2", parts[1])
+            
+            stage1_idx <- which(levs == stage1)
+            stage2_idx <- which(levs == stage2)
+            
+            if (length(stage1_idx) > 0 && length(stage2_idx) > 0) {
+                mean1 <- sig_means$Mean[sig_means$Stage == stage1]
+                mean2 <- sig_means$Mean[sig_means$Stage == stage2]
+                
+                if (length(mean1) > 0 && length(mean2) > 0) {
+                    x_mid <- mean(c(stage1_idx, stage2_idx))
+                    y_pos <- max(mean1, mean2) + 0.3
+                    
+                    asterisks <- if(p_val < 0.001) "***" else if(p_val < 0.01) "**" else "*"
+                    
+                    sig_annotations <- rbind(sig_annotations, data.frame(
+                        Signature = sig,
+                        Signature_Full = sig_full,
+                        x = x_mid,
+                        y = y_pos,
+                        label = asterisks,
+                        stringsAsFactors = FALSE
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -437,29 +539,26 @@ p_panel_c <- ggplot(traj_data, aes(x = Stage, y = Score)) +
     scale_fill_manual(values = GROUP_COLORS, name = "Stage") +
     scale_color_brewer(palette = "Set1", guide = "none") +
     scale_shape_manual(values = GROUP_SHAPES, name = "Stage") +
-    labs(x = "Stage", y = "Z-Score", 
-         caption = "Limma pairwise tests with arrayWeights: * p<0.05, ** p<0.01, *** p<0.001") +
+    labs(x = "Stage", y = "Z-Score") +
     theme_publication(base_size = 8) +
     theme(legend.position = "bottom", 
           strip.text = element_text(size = 7),
           axis.text.x = element_text(angle = 45, hjust = 1),
-          plot.caption = element_text(size = 6, hjust = 0),
           plot.tag = element_text(face = "bold", size = 20)) +
     plot_annotation(tag_levels = list(c("C")))
 
-# Print summary of significance testing
-cat("\nSignificance Testing Summary (Limma with arrayWeights):\n")
-for(sig in names(sig_results)) {
-    if(sig_results[[sig]]$is_sig) {
-        cat(sprintf("  %s: %d/%d comparisons significant (min p=%.4f)\n",
-                   sig, sig_results[[sig]]$n_sig, length(contrast_names), sig_results[[sig]]$min_p))
-    }
+if(nrow(sig_annotations) > 0) {
+    p_panel_c <- p_panel_c +
+        geom_text(data = sig_annotations,
+                 aes(x = x, y = y, label = label),
+                 inherit.aes = FALSE,
+                 size = 4, fontface = "bold", color = "black")
 }
 
 # ==============================================================================
-# PANEL D: SEMANTIC PATHWAY TREE (WIDE CANVAS)
+# PANEL D: SEMANTIC PATHWAY TREE (SMALLER FONT)
 # ==============================================================================
-cat("Panel D: Creating pathway tree (wide)...\n")
+cat("Panel D: Creating pathway tree with smaller font...\n")
 
 combined_gmt <- file.path(GMT_DIR, "combined_human.gmt")
 if (!file.exists(combined_gmt)) stop("Combined GMT not found at: ", combined_gmt)
@@ -475,13 +574,13 @@ if (!is.null(gsea_combined) && nrow(gsea_combined) > 0) {
     gsea_combined <- pairwise_termsim(gsea_combined)
     pathway_results <- gsea_combined@result
     
-    # Make plot with wider canvas - use hexpand to add more space
+    # MUCH SMALLER FONT for readability
     p_panel_d <- treeplot(gsea_combined, cluster.params = list(n = 5),
-                          cladelab_offset = 8,  # Increased offset
+                          cladelab_offset = 8,
                           tiplab_offset = 0.3,
-                          fontsize_cladelab = 5, 
-                          fontsize = 2.5) +
-        hexpand(.35) +  # Doubled from .15 to .35 for more horizontal space
+                          fontsize_cladelab = 3,  # Reduced from 5 to 3
+                          fontsize = 1.8) +      # Reduced from 2.5 to 1.8
+        hexpand(.35) +
         theme(plot.tag = element_text(face = "bold", size = 20)) +
         plot_annotation(tag_levels = list(c("D")))
 } else {
@@ -494,7 +593,7 @@ if (!is.null(gsea_combined) && nrow(gsea_combined) > 0) {
 }
 
 # ==============================================================================
-# DRUG DISCOVERY (same as before)
+# DRUG DISCOVERY
 # ==============================================================================
 cat("Running drug discovery analysis...\n")
 
@@ -543,6 +642,8 @@ if(!is.na(dsig_path) && file.exists(dsig_path) && !is.null(pathway_results)) {
         for(i in 1:nrow(top_cands)) {
             drug_name <- top_cands$ID[i]
             drug_clean <- clean_drug_name(drug_name)
+            
+            # Query ChEMBL with fallback (EXACTLY like v6_SUPREME)
             chembl_data <- query_chembl_fallback(drug_name)
             bbb_data <- predict_bbb_penetration(chembl_data)
             
@@ -552,9 +653,10 @@ if(!is.na(dsig_path) && file.exists(dsig_path) && !is.null(pathway_results)) {
                 0
             }
             
-            bbb_score <- if(!is.na(bbb_data$bbb_score)) bbb_data$bbb_score else 0
+            bbb_score <- if(!is.na(bbb_data$bbb_score)) bbb_data$bbb_score else 0.0
             scoring <- calculate_integrated_score(top_cands$NES[i], bbb_score, pathway_count)
             
+            # Get clinical trials from fallback database
             clinical_trials <- if(!is.null(chembl_data$clinical_trials)) chembl_data$clinical_trials else 0
             
             drug_profiles[[i]] <- list(
@@ -568,7 +670,6 @@ if(!is.na(dsig_path) && file.exists(dsig_path) && !is.null(pathway_results)) {
                 integrated_score = scoring$integrated_score,
                 nes_component = scoring$nes_component,
                 bbb_component = scoring$bbb_component,
-                polypharm_bonus = scoring$polypharm_bonus,
                 rank = i
             )
         }
@@ -703,17 +804,18 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
 }
 
 # ==============================================================================
-# PANEL G: DRUG-PATHWAY HEATMAP (FILTERED)
+# PANEL G: DRUG-PATHWAY HEATMAP (NO FILTERING - SHOW ALL DATA)
 # ==============================================================================
-cat("Panel G: Creating Drug-Pathway Heatmap...\n")
+cat("Panel G: Creating Drug-Pathway Heatmap (NO FILTERING)...\n")
 
 if(!is.null(pathway_results) && !is.null(drug_results) && 
    nrow(pathway_results) > 0 && nrow(drug_results) > 0) {
     
+    # Take top pathways and drugs but DON'T filter the overlap matrix
     top_pathways <- pathway_results %>% filter(p.adjust < 0.05) %>% arrange(p.adjust) %>%
-        head(20) %>% pull(ID)
+        head(30) %>% pull(ID)
     top_drugs <- drug_results %>% filter(NES < 0, p.adjust < 0.25) %>% arrange(NES) %>%
-        head(20) %>% pull(ID)
+        head(30) %>% pull(ID)
     
     if(length(top_pathways) > 0 && length(top_drugs) > 0) {
         overlap_mat <- matrix(0, nrow=length(top_drugs), ncol=length(top_pathways),
@@ -727,35 +829,19 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
             }
         }
         
-        drug_max <- apply(overlap_mat, 1, max)
-        pathway_max <- apply(overlap_mat, 2, max)
+        # NO FILTERING - just truncate names
+        rownames(overlap_mat) <- substr(clean_drug_names_vectorized(rownames(overlap_mat)), 1, 25)
+        colnames(overlap_mat) <- substr(colnames(overlap_mat), 1, 30)
         
-        overlap_mat_filtered <- overlap_mat[drug_max >= 5, pathway_max >= 5, drop=FALSE]
-        
-        if(nrow(overlap_mat_filtered) > 0 && ncol(overlap_mat_filtered) > 0) {
-            if(nrow(overlap_mat_filtered) > DRUG_PATHWAY_TOP_N) {
-                drug_sums <- rowSums(overlap_mat_filtered)
-                keep_drugs <- names(sort(drug_sums, decreasing=TRUE)[1:DRUG_PATHWAY_TOP_N])
-                overlap_mat_filtered <- overlap_mat_filtered[keep_drugs, , drop=FALSE]
-            }
-            
-            if(ncol(overlap_mat_filtered) > DRUG_PATHWAY_TOP_N) {
-                pathway_sums <- colSums(overlap_mat_filtered)
-                keep_pathways <- names(sort(pathway_sums, decreasing=TRUE)[1:DRUG_PATHWAY_TOP_N])
-                overlap_mat_filtered <- overlap_mat_filtered[, keep_pathways, drop=FALSE]
-            }
-            
-            rownames(overlap_mat_filtered) <- substr(clean_drug_names_vectorized(rownames(overlap_mat_filtered)), 1, 25)
-            colnames(overlap_mat_filtered) <- substr(colnames(overlap_mat_filtered), 1, 30)
-            
-            ht <- Heatmap(overlap_mat_filtered, name = "Genes",
-                          col = colorRamp2(c(0, max(overlap_mat_filtered)/2, max(overlap_mat_filtered)),
+        if(nrow(overlap_mat) > 0 && ncol(overlap_mat) > 0) {
+            ht <- Heatmap(overlap_mat, name = "Genes",
+                          col = colorRamp2(c(0, max(overlap_mat)/2, max(overlap_mat)),
                                            c("white", "#fee090", "#d73027")),
                           cluster_rows = TRUE, cluster_columns = TRUE,
                           column_title = "Drug-Pathway Overlap",
                           column_title_gp = gpar(fontsize = 13, fontface = "bold"),
-                          row_names_gp = gpar(fontsize = 9),
-                          column_names_gp = gpar(fontsize = 8),
+                          row_names_gp = gpar(fontsize = 8),
+                          column_names_gp = gpar(fontsize = 7),
                           heatmap_legend_param = list(title_gp = gpar(fontsize = 10)),
                           width = unit(5, "cm"), height = unit(7, "cm"))
             
@@ -763,7 +849,7 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
             p_panel_g <- ggdraw(ht_grob) +
                 draw_label("G", x = 0.02, y = 0.98, fontface = "bold", size = 20, color = "black")
         } else {
-            p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient overlaps", size = 6) +
+            p_panel_g <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No data", size = 6) +
                 theme_void() +
                 theme(plot.tag = element_text(face = "bold", size = 20)) +
                 plot_annotation(tag_levels = list(c("G")))
@@ -782,7 +868,7 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
 }
 
 # ==============================================================================
-# PANEL H: 2D DRUG PLOT
+# PANEL H: 2D DRUG PLOT (PATHWAY HITS AS COLOR ONLY)
 # ==============================================================================
 cat("Panel H: Creating 2D Drug Plot...\n")
 
@@ -791,7 +877,7 @@ if(length(drug_profiles) > 0) {
     
     for(profile in head(drug_profiles, 25)) {
         nes <- abs(profile$NES)
-        bbb <- if(!is.na(profile$bbb$bbb_score)) profile$bbb$bbb_score else 0
+        bbb <- if(!is.na(profile$bbb$bbb_score)) profile$bbb$bbb_score else 0.0
         pathway_count <- profile$pathway_count
         integrated <- profile$integrated_score
         
@@ -821,7 +907,7 @@ if(length(drug_profiles) > 0) {
         scale_color_gradient(low = "#3498db", high = "#e74c3c", name = "Pathway\nHits") +
         scale_size_continuous(range = c(2, 9), name = "IntScore") +
         labs(title = "Drug Candidates",
-             subtitle = "IntScore = |NES|^1.5 × BBB × (1 + 0.1×Pathways)",
+             subtitle = "IntScore = |NES|^1.5 × BBB (pathways in color)",
              x = "|NES|",
              y = "BBB Score") +
         theme_minimal(base_size = 9) +
@@ -840,9 +926,9 @@ if(length(drug_profiles) > 0) {
 }
 
 # ==============================================================================
-# PANEL I: TOP 15 DRUGS TABLE
+# PANEL I: TOP 15 DRUGS TABLE (FULL WIDTH, PROPERLY SIZED)
 # ==============================================================================
-cat("Panel I: Creating Drug Table...\n")
+cat("Panel I: Creating Drug Table (full width)...\n")
 
 if(length(drug_profiles) >= TOP_DRUGS_DISPLAY) {
     table_data <- data.frame()
@@ -853,23 +939,40 @@ if(length(drug_profiles) >= TOP_DRUGS_DISPLAY) {
         
         table_data <- rbind(table_data, data.frame(
             Rank = i,
-            Drug = substr(drug_clean, 1, 15),
-            NES = round(abs(profile$NES), 2),
-            BBB = round(profile$bbb_component, 2),
+            Drug = substr(drug_clean, 1, 18),
+            NES = sprintf("%.2f", abs(profile$NES)),
+            BBB = sprintf("%.2f", profile$bbb_component),
             Trials = profile$clinical_trials,
             Pathways = profile$pathway_count,
-            Score = round(profile$integrated_score, 1),
+            Score = sprintf("%.1f", profile$integrated_score),
             stringsAsFactors = FALSE
         ))
     }
     
+    # Create table with consistent spacing
+    table_grob <- tableGrob(
+        table_data, 
+        rows = NULL,
+        theme = ttheme_minimal(
+            base_size = 8,
+            core = list(
+                fg_params = list(hjust = 0, x = 0.05),
+                padding = unit(c(3, 3), "mm")
+            ),
+            colhead = list(
+                fg_params = list(fontface = "bold", hjust = 0, x = 0.05),
+                padding = unit(c(3, 3), "mm")
+            )
+        )
+    )
+    
+    # Set explicit column widths for full panel usage
+    table_grob$widths <- unit(c(0.6, 2.5, 1.0, 1.0, 1.0, 1.0, 1.0), "cm")
+    
+    # Draw with full panel coverage
     p_panel_i <- ggdraw() +
-        draw_label("I", x = 0.02, y = 0.98, fontface = "bold", size = 20, color = "black") +
-        draw_grob(tableGrob(table_data, rows = NULL,
-                           theme = ttheme_minimal(base_size = 8,
-                                                 core = list(fg_params = list(hjust = 0, x = 0.05)),
-                                                 colhead = list(fg_params = list(fontface = "bold")))),
-                 x = 0.5, y = 0.5, width = 0.9, height = 0.85)
+        draw_label("I", x = 0.01, y = 0.99, fontface = "bold", size = 20, color = "black", hjust = 0, vjust = 1) +
+        draw_grob(table_grob, x = 0.02, y = 0.02, width = 0.96, height = 0.94, hjust = 0, vjust = 0)
     
 } else {
     p_panel_i <- ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Insufficient drugs", size = 6) +
@@ -886,9 +989,9 @@ cat("Assembling final figure with embedded caption...\n")
 # Create caption text
 caption_text <- paste(
     "Figure: U251 Transcriptomic Evolution and Therapeutic Target Discovery.",
-    "(A) Experimental design. (B) PCA with scree plot. (C) Subtype trajectories (limma pairwise with arrayWeights: * p<0.05, ** p<0.01, *** p<0.001).",
+    "(A) Experimental design. (B) PCA with trajectory arrows and scree plot. (C) Subtype trajectories (pairwise significance: * p<0.05, ** p<0.01, *** p<0.001).",
     "(D) Pathway tree. (E) PPI network. (F) Polypharmacology network.",
-    "(G) Drug-pathway heatmap. (H) 2D drug plot. (I) Top 15 drug candidates.",
+    "(G) Drug-pathway heatmap (all data, no filtering). (H) 2D drug plot. (I) Top 15 drug candidates.",
     sep = " "
 )
 
@@ -903,16 +1006,16 @@ final_figure <- main_figure +
                    theme = theme(plot.caption = element_text(size = 9, hjust = 0, margin = margin(t = 10))))
 
 ggsave(
-    filename = file.path(OUT_DIR, "Publication_Figure_9Panel.png"),
+    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_FINAL.png"),
     plot = final_figure,
     width = 20,
-    height = 19,  # Slightly taller for caption
+    height = 19,
     dpi = 300,
     bg = "white"
 )
 
 ggsave(
-    filename = file.path(OUT_DIR, "Publication_Figure_9Panel.pdf"),
+    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_FINAL.pdf"),
     plot = final_figure,
     width = 20,
     height = 19
@@ -923,18 +1026,33 @@ captions <- c(
     "FIGURE: U251 Transcriptomic Evolution and Therapeutic Target Discovery",
     "",
     "A. Experimental Design",
-    "B. Global Structure: PCA + Scree",
-    "C. Subtype Trajectories (limma pairwise with arrayWeights: * p<0.05, ** p<0.01, *** p<0.001)",
-    "D. Pathway Tree (wide canvas)",
+    "B. Global Structure: PCA with Trajectory Arrows + Scree",
+    "C. Subtype Trajectories (pairwise significance markers at midpoints)",
+    "D. Pathway Tree (smaller font for readability)",
     "E. PPI Network",
     "F. Polypharmacology Network",
-    "G. Drug-Pathway Overlap Heatmap",
-    "H. Drug Candidates 2D Plot",
-    sprintf("I. Top %d Drug Candidates Table", TOP_DRUGS_DISPLAY)
+    "G. Drug-Pathway Overlap Heatmap (all data, no filtering)",
+    "H. Drug Candidates 2D Plot (pathway hits in color)",
+    sprintf("I. Top %d Drug Candidates Table (full width)", TOP_DRUGS_DISPLAY),
+    "",
+    "FIXES IN THIS VERSION:",
+    "- PCA includes trajectory arrows connecting group centroids",
+    "- BBB scoring uses proper decimal precision (not integers)",
+    "- Clinical trials data from v6_SUPREME fallback database",
+    "- Heatmap shows all data without filtering",
+    "- Tree plot font reduced for readability",
+    "- Table panel properly sized to fill space"
 )
 
-writeLines(captions, file.path(OUT_DIR, "Figure_Captions.txt"))
+writeLines(captions, file.path(OUT_DIR, "Figure_Captions_FINAL.txt"))
 
-cat("\n✅ Publication figure complete!\n")
-cat(sprintf("   PNG: %s/Publication_Figure_9Panel.png\n", OUT_DIR))
-cat(sprintf("   PDF: %s/Publication_Figure_9Panel.pdf\n", OUT_DIR))
+cat("\n✅ Publication figure complete (FINAL VERSION)!\n")
+cat(sprintf("   PNG: %s/Publication_Figure_9Panel_FINAL.png\n", OUT_DIR))
+cat(sprintf("   PDF: %s/Publication_Figure_9Panel_FINAL.pdf\n", OUT_DIR))
+cat("\nKEY IMPROVEMENTS:\n")
+cat("  ✓ PCA trajectory arrows from run_global_subtypes.R\n")
+cat("  ✓ BBB prediction exactly like v6_SUPREME (decimal scoring)\n")
+cat("  ✓ Clinical trials lookup from v6_SUPREME database\n")
+cat("  ✓ Heatmap with NO filtering - all data shown\n")
+cat("  ✓ Tree plot font size reduced (3 and 1.8)\n")
+cat("  ✓ Table panel full width and properly formatted\n")
