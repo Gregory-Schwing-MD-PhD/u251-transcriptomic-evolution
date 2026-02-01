@@ -359,38 +359,23 @@ sig_results <- list()
 
 for (sig in rownames(z_res)) {
     # Prepare data matrix (1 row per signature)
-    mat_sig <- matrix(z_res[sig, ], nrow = 1)
-    colnames(mat_sig) <- colnames(z_res)
-    rownames(mat_sig) <- sig
+    mat_sig_single <- matrix(z_res[sig, ], nrow = 1)
+    colnames(mat_sig_single) <- colnames(z_res)
+    rownames(mat_sig_single) <- sig
     
     # Calculate array weights
-    aw <- arrayWeights(mat_sig, design)
+    aw <- arrayWeights(mat_sig_single, design)
     
     # Fit linear model with array weights
-    fit <- lmFit(mat_sig, design, weights = aw)
+    fit <- lmFit(mat_sig_single, design, weights = aw)
     
     # Apply contrasts
     fit2 <- contrasts.fit(fit, cont.matrix)
     fit2 <- eBayes(fit2)
     
-    # Extract p-values for all pairwise comparisons
-    tt_all <- topTable(fit2, number = Inf, sort.by = "none")
-    
-    # Get p-values for each comparison
-    pvals <- sapply(contrast_names, function(contrast_name) {
-        if(contrast_name %in% colnames(tt_all)) {
-            # If multiple rows, take the first (should only be 1 row anyway)
-            tt_all[1, paste0(contrast_name, ".adj.P.Val")]
-        } else {
-            NA
-        }
-    })
-    
-    # If the above doesn't work, try extracting directly from fit2
-    if(all(is.na(pvals))) {
-        pvals <- fit2$p.value[1, ]
-        names(pvals) <- contrast_names
-    }
+    # Extract p-values directly from fit2 (unadjusted, since only 1 feature)
+    pvals <- as.numeric(fit2$p.value[1, ])
+    names(pvals) <- contrast_names
     
     # Mark as significant if ANY pairwise comparison is significant at p < 0.05
     is_sig <- any(pvals < 0.05, na.rm = TRUE)
