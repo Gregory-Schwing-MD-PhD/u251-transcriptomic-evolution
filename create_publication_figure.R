@@ -492,10 +492,10 @@ volcano_data$alpha_value <- ifelse(volcano_data$Contrast == "total_evolution", 0
                                     ifelse(volcano_data$Contrast == "therapy_impact", 0.5,   # Orange medium
                                            0.5))  # Blue medium
 
-# FIXED: Better vertical spacing to prevent label overlap (47, 41, 35 instead of 45, 40, 35)
+# FIXED: MUCH MORE vertical spacing to prevent label overlap (49, 42, 35 instead of 47, 41, 35)
 text_annotations <- data.frame(
     x = c(-7, -7, -7, 7, 7, 7),
-    y = c(47, 41, 35, 47, 41, 35),  # More spacing
+    y = c(49, 42, 35, 49, 42, 35),  # Even more spacing: 7 units between each
     label = c(
         paste0(gene_counts$Label[1], "\n↓ ", gene_counts$Down[1]),
         paste0(gene_counts$Label[2], "\n↓ ", gene_counts$Down[2]),
@@ -1158,68 +1158,20 @@ if(length(drug_profiles) >= TOP_DRUGS_DISPLAY) {
 cat("Assembling final figure with enhanced caption...\n")
 
 # FIXED: Multi-line wrapped caption with size 11 Arial font, DOES NOT SQUISH PANELS
-caption_text <- paste(
-    "Figure: U251 Transcriptomic Evolution Through LITT Therapy and Therapeutic Target Discovery\n\n",
-    
-    "(A) Global transcriptomic structure: PCA biplot showing evolutionary trajectory from in vitro culture through primary\n",
-    "tumor to post-LITT recurrence, with gene driver arrows indicating major contributors to variance; scree plot quantifies\n",
-    "variance explained by principal components.\n\n",
-    
-    "(B) Differential expression landscape: Superimposed volcano plots for three experimental contrasts (blue=brain\n",
-    "adaptation, orange=therapy impact, green=total evolution), with gene counts annotated for up/down-regulated genes\n",
-    "(FDR<0.05, |log2FC|>1); dashed lines mark significance thresholds (vertical: FC=2, horizontal: FDR=0.05).\n\n",
-    
-    "(C) Subtype trajectory analysis: Longitudinal evolution of GBM molecular subtypes (Verhaak, Neftel, Garofano\n",
-    "classifications) across LITT therapy; asterisks indicate statistically significant pairwise changes via arrayWeights-\n",
-    "adjusted limma with FDR correction (*p<0.05, **p<0.01, ***p<0.001).\n\n",
-    
-    "(D) Semantic pathway organization: Hierarchical clustering of enriched pathways (FDR<0.05) based on gene overlap,\n",
-    "grouped into functional modules with clade labels.\n\n",
-    
-    "(E) Protein interaction network: STRING-based PPI network of differentially expressed genes; red nodes=hub proteins\n",
-    "with highest connectivity (top 15 by degree centrality).\n\n",
-    
-    "(F) Polypharmacology landscape: Bipartite network connecting drug candidates to enriched pathways based on shared\n",
-    "gene sets (≥3 genes); triangular nodes indicate multi-target drugs affecting ≥3 pathways.\n\n",
-    
-    "(G) Drug-pathway mechanistic overlap: Heatmap quantifying shared genes between top drug signatures and enriched\n",
-    "biological pathways, revealing mechanism-of-action relationships.\n\n",
-    
-    "(H) Integrated drug scoring: 2D visualization of drug candidates plotted by therapeutic enrichment (|NES|) vs BBB\n",
-    "penetration (threshold=0.5); point size represents integrated score (|NES|^1.5 × BBB), color indicates polypharmacology\n",
-    "potential (pathway hits).\n\n",
-    
-    "(I) Top drug candidates: Ranked table of 20 prioritized drugs with key metrics including normalized enrichment score,\n",
-    "BBB penetration probability, clinical trial activity, pathway coverage, and composite integrated score.",
-    
-    sep = ""
-)
+# ==============================================================================
+# ASSEMBLE FINAL FIGURE - NO CAPTION, 20x20 inches
+# ==============================================================================
+cat("Assembling final figure (no caption)...\n")
 
-main_figure <- (p_panel_a | p_panel_b | p_panel_c) /
+final_figure <- (p_panel_a | p_panel_b | p_panel_c) /
                (p_panel_d | p_panel_e | p_panel_f) /
                (p_panel_g | p_panel_h | p_panel_i)
-
-# FIXED: Use grid textGrob for FULL-WIDTH caption (spans entire 20" width, not just one panel)
-caption_grob <- textGrob(
-    caption_text,
-    x = 0.02, y = 0.98,  # Top-left positioning
-    hjust = 0, vjust = 1,
-    gp = gpar(fontfamily = "sans", fontsize = 11, lineheight = 1.2)
-)
-
-# Combine figure with full-width caption
-final_figure <- arrangeGrob(
-    main_figure,
-    caption_grob,
-    ncol = 1,
-    heights = unit.c(unit(20, "inches"), unit(5, "inches"))  # 20" for panels, 5" for caption
-)
 
 ggsave(
     filename = file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.png"),
     plot = final_figure,
     width = 20,
-    height = 25,  # 20 for panels (same as before) + 5 for caption space
+    height = 20,  # 20x20 square figure, no caption
     dpi = 300,
     bg = "white"
 )
@@ -1228,7 +1180,7 @@ ggsave(
     filename = file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.pdf"),
     plot = final_figure,
     width = 20,
-    height = 25  # 20 for panels (same as before) + 5 for caption space
+    height = 20  # 20x20 square figure, no caption
 )
 
 captions <- c(
