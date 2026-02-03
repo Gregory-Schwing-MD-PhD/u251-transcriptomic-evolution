@@ -1204,7 +1204,7 @@ caption_grob <- textGrob(
     caption_text,
     x = 0.02, y = 0.98,  # Top-left positioning
     hjust = 0, vjust = 1,
-    gp = gpar(fontfamily = "Arial", fontsize = 11, lineheight = 1.2)
+    gp = gpar(fontfamily = "sans", fontsize = 11, lineheight = 1.2)
 )
 
 # Combine figure with full-width caption
