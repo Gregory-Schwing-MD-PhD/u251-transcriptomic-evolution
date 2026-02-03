@@ -1,9 +1,17 @@
 #!/usr/bin/env Rscript
-# run_pathways_drugs_v8_ULTIMATE.R
+# run_pathways_drugs_v6_SUPREME.R
 # ==============================================================================
-# ULTIMATE EDITION - Combining Best of v6 + v7
+# SUPREME EDITION - Enhanced with Integrated Scoring & Publication Visuals
 # 
-# FEATURES:
+# NEW FEATURES IN THIS VERSION:
+# ✅ Integrated drug scoring: |NES| × BBB × log(Targets+1)
+# ✅ 2D Drug Candidate Plot: NES vs BBB, colored by polypharmacology
+# ✅ Multi-target drug section (restored from legacy code)
+# ✅ Publication-quality network fonts (size 4 for readability)
+# ✅ Enhanced LLM output with star ratings
+# ✅ Comprehensive rankings in all outputs
+# 
+# ORIGINAL FEATURES:
 # ✅ Comprehensive drug profiling (ChEMBL + PubChem + ClinicalTrials)
 # ✅ BBB penetration prediction with detailed rationale
 # ✅ ADMET property prediction
@@ -13,7 +21,7 @@
 # ✅ Drug-pathway integration heatmaps
 # ✅ Polypharmacology network visualization
 # ✅ Auto-cache validation (purges corrupted data)
-# ✅ Robust error handling (paste0 instead of sprintf)
+# ✅ Robust error handling
 # ✅ Full drug list profiling (50+ candidates)
 # ✅ Comprehensive CSV export
 # ✅ LLM-formatted text report for AI analysis
@@ -47,9 +55,9 @@ GSEA_EMAP_N <- 20
 GSEA_MIN_SIZE <- 15
 GSEA_MAX_SIZE <- 500
 DRUG_PATHWAY_TOP_N <- 20
-MOA_TOP_DRUGS <- 50  # INCREASED for comprehensive profiling
-TEXT_REPORT_N <- 50  # INCREASED for full output
-EXPORT_TOP_N <- 100  # For CSV exports
+MOA_TOP_DRUGS <- 50
+TEXT_REPORT_N <- 50
+EXPORT_TOP_N <- 100
 
 # API Configuration
 CACHE_DIR <- ".drug_discovery_cache"
@@ -63,15 +71,12 @@ PUBCHEM_BASE_URL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 init_cache <- function() {
     if(!dir.exists(CACHE_DIR)) dir.create(CACHE_DIR, recursive = TRUE)
     
-    # CRITICAL: Clear cache if it contains string-type numeric fields
-    # This happens when old API responses cached strings instead of numbers
     cache_files <- list.files(CACHE_DIR, pattern = "\\.rds$", full.names = TRUE)
     if(length(cache_files) > 0) {
         cat(sprintf("  Validating %d cached files...\n", length(cache_files)))
         for(cf in cache_files) {
             cached_data <- tryCatch(readRDS(cf), error = function(e) NULL)
             if(!is.null(cached_data) && !is.null(cached_data$molecular_weight)) {
-                # If molecular_weight is a string, cache is corrupted - delete it
                 if(is.character(cached_data$molecular_weight)) {
                     cat(sprintf("  [PURGE] Corrupted cache: %s\n", basename(cf)))
                     file.remove(cf)
@@ -93,12 +98,11 @@ save_cached <- function(key, value) {
 }
 
 # ==============================================================================
-# DRUG NAME CLEANING (CRITICAL - APPLIED EVERYWHERE)
+# DRUG NAME CLEANING
 # ==============================================================================
 clean_drug_name <- function(raw_name) {
     if(is.null(raw_name) || is.na(raw_name) || raw_name == "") return("")
     
-    # Extract from parentheses: "Velcade(Bortezomib)" -> "Bortezomib"
     if(grepl("\\(", raw_name)) {
         inside_parens <- str_extract(raw_name, "(?<=\\().+?(?=\\))")
         if(!is.na(inside_parens) && nchar(inside_parens) > 3) {
@@ -106,20 +110,17 @@ clean_drug_name <- function(raw_name) {
         }
     }
     
-    # Remove dataset suffixes
     clean <- gsub("\\s+(MCF7|PC3|HL60|CTD|TTD|BOSS|UP|DOWN|LINCS|GSE)[0-9A-Za-z_]*.*", "", raw_name, ignore.case = TRUE)
-    
-    # Remove salt forms
     clean <- gsub("\\s+(hydrochloride|sodium|maleate|phosphate|sulfate|acetate|citrate)", "", clean, ignore.case = TRUE)
     
     return(trimws(clean))
 }
 
 # ==============================================================================
-# CHEMBL API (SAFE PARSING)
+# CHEMBL API
 # ==============================================================================
 query_chembl <- function(drug_name, use_cache = TRUE) {
-    search_name <- clean_drug_name(drug_name)  # FIX: Always clean
+    search_name <- clean_drug_name(drug_name)
     if(search_name == "") return(get_chembl_fallback(drug_name))
     
     cache_key <- paste0("chembl_", search_name)
@@ -143,7 +144,6 @@ query_chembl <- function(drug_name, use_cache = TRUE) {
         if(status_code(response) == 200) {
             content <- fromJSON(content(response, "text", encoding = "UTF-8"), simplifyVector = FALSE)
             
-            # FIX: Safe null-checked parsing
             if(!is.null(content$molecules) && length(content$molecules) > 0) {
                 mol <- content$molecules[[1]]
                 
@@ -151,7 +151,6 @@ query_chembl <- function(drug_name, use_cache = TRUE) {
                     if(!is.null(obj) && !is.null(obj[[key]])) return(obj[[key]]) else return(default)
                 }
                 
-                # CRITICAL FIX: Convert all numeric fields to actual numbers
                 get_numeric <- function(obj, key, default = NA) {
                     val <- get_prop(obj, key, default)
                     if(is.na(val)) return(NA)
@@ -188,73 +187,21 @@ query_chembl <- function(drug_name, use_cache = TRUE) {
 }
 
 get_chembl_fallback <- function(drug_name) {
-    drug_upper <- toupper(clean_drug_name(drug_name))  # FIX: Clean here too
+    drug_upper <- toupper(clean_drug_name(drug_name))
     
     fallback_db <- list(
-        # Anthracyclines
-        "DOXORUBICIN" = list(chembl_id = "CHEMBL53463", max_phase = 4, molecular_weight = 543.52,
-                             alogp = 1.27, psa = 206.07, hba = 12, hbd = 6, ro5_violations = 2,
-                             targets = c("TOP2A", "TOP2B"), source = "Internal DB"),
-        
-        # Alkylating agents
         "TEMOZOLOMIDE" = list(chembl_id = "CHEMBL810", max_phase = 4, molecular_weight = 194.15,
                               alogp = -0.85, psa = 106.59, hba = 6, hbd = 1, ro5_violations = 0,
                               targets = c("DNA"), source = "Internal DB"),
-        
-        # Monoclonal antibodies (large molecules - poor BBB)
-        "BEVACIZUMAB" = list(chembl_id = "CHEMBL1201583", max_phase = 4, molecular_weight = 149000,
-                             psa = 25000, alogp = -10, hba = 500, hbd = 300, ro5_violations = 4,
-                             targets = c("VEGFA"), source = "Internal DB"),
-        
-        # Tyrosine kinase inhibitors
-        "IMATINIB" = list(chembl_id = "CHEMBL941", max_phase = 4, molecular_weight = 493.60,
-                          alogp = 3.07, psa = 86.19, hba = 7, hbd = 2, ro5_violations = 0,
-                          targets = c("ABL1", "KIT", "PDGFRA"), source = "Internal DB"),
-        
-        # Proteasome inhibitors
-        "BORTEZOMIB" = list(chembl_id = "CHEMBL325041", max_phase = 4, molecular_weight = 384.24,
-                            alogp = 0.93, psa = 119.20, hba = 6, hbd = 4, ro5_violations = 0,
-                            targets = c("PSMB5"), source = "Internal DB"),
-        
-        # PI3K inhibitors - ADDED FOR YOUR ANALYSIS
         "LY294002" = list(chembl_id = "CHEMBL98350", max_phase = 0, molecular_weight = 307.34,
                           alogp = 2.83, psa = 80.22, hba = 4, hbd = 2, ro5_violations = 0,
                           targets = c("PIK3CA", "PIK3CB", "PIK3CD", "PIK3CG", "MTOR"), source = "Internal DB"),
-        
-        "LY-294002" = list(chembl_id = "CHEMBL98350", max_phase = 0, molecular_weight = 307.34,
-                           alogp = 2.83, psa = 80.22, hba = 4, hbd = 2, ro5_violations = 0,
-                           targets = c("PIK3CA", "PIK3CB", "PIK3CD", "PIK3CG", "MTOR"), source = "Internal DB"),
-        
-        "WORTMANNIN" = list(chembl_id = "CHEMBL414657", max_phase = 0, molecular_weight = 428.43,
-                            alogp = 1.89, psa = 106.97, hba = 7, hbd = 1, ro5_violations = 0,
-                            targets = c("PIK3CA", "PIK3CB", "PIK3CD", "PIK3CG"), source = "Internal DB"),
-        
-        "GDC-0941" = list(chembl_id = "CHEMBL1229517", max_phase = 2, molecular_weight = 505.59,
-                          alogp = 3.52, psa = 106.35, hba = 8, hbd = 2, ro5_violations = 1,
-                          targets = c("PIK3CA", "PIK3CB", "PIK3CD", "PIK3CG"), source = "Internal DB"),
-        
-        # mTOR inhibitors
-        "RAPAMYCIN" = list(chembl_id = "CHEMBL445", max_phase = 4, molecular_weight = 914.17,
-                           alogp = 4.30, psa = 195.06, hba = 13, hbd = 3, ro5_violations = 3,
-                           targets = c("MTOR"), source = "Internal DB"),
-        
-        "EVEROLIMUS" = list(chembl_id = "CHEMBL1123", max_phase = 4, molecular_weight = 958.22,
-                            alogp = 5.10, psa = 202.29, hba = 14, hbd = 3, ro5_violations = 3,
-                            targets = c("MTOR"), source = "Internal DB"),
-        
-        # EGFR inhibitors
-        "GEFITINIB" = list(chembl_id = "CHEMBL939", max_phase = 4, molecular_weight = 446.90,
-                           alogp = 3.70, psa = 68.74, hba = 7, hbd = 1, ro5_violations = 0,
-                           targets = c("EGFR"), source = "Internal DB"),
-        
         "ERLOTINIB" = list(chembl_id = "CHEMBL558", max_phase = 4, molecular_weight = 393.44,
                            alogp = 3.23, psa = 74.73, hba = 6, hbd = 1, ro5_violations = 0,
                            targets = c("EGFR"), source = "Internal DB"),
-        
-        # MEK inhibitors  
-        "TRAMETINIB" = list(chembl_id = "CHEMBL2103865", max_phase = 4, molecular_weight = 615.39,
-                            alogp = 3.20, psa = 119.61, hba = 8, hbd = 2, ro5_violations = 2,
-                            targets = c("MAP2K1", "MAP2K2"), source = "Internal DB")
+        "IMATINIB" = list(chembl_id = "CHEMBL941", max_phase = 4, molecular_weight = 493.60,
+                          alogp = 3.07, psa = 86.19, hba = 7, hbd = 2, ro5_violations = 0,
+                          targets = c("ABL1", "KIT", "PDGFRA"), source = "Internal DB")
     )
     
     if(drug_upper %in% names(fallback_db)) return(fallback_db[[drug_upper]])
@@ -265,7 +212,7 @@ get_chembl_fallback <- function(drug_name) {
 # PUBCHEM API
 # ==============================================================================
 query_pubchem <- function(drug_name, use_cache = TRUE) {
-    search_name <- clean_drug_name(drug_name)  # FIX: Always clean
+    search_name <- clean_drug_name(drug_name)
     if(search_name == "") return(NULL)
     
     cache_key <- paste0("pubchem_", search_name)
@@ -307,7 +254,7 @@ query_pubchem <- function(drug_name, use_cache = TRUE) {
 # CLINICAL TRIALS API
 # ==============================================================================
 query_clinical_trials <- function(drug_name, condition = "brain cancer", use_cache = TRUE) {
-    search_name <- clean_drug_name(drug_name)  # FIX: Always clean
+    search_name <- clean_drug_name(drug_name)
     if(search_name == "") return(list(total_trials = 0, source = "Unknown"))
     
     cache_key <- paste0("clintrials_", search_name)
@@ -345,12 +292,11 @@ query_clinical_trials <- function(drug_name, condition = "brain cancer", use_cac
 }
 
 get_clinical_trials_fallback <- function(drug_name) {
-    drug_upper <- toupper(clean_drug_name(drug_name))  # FIX: Clean
+    drug_upper <- toupper(clean_drug_name(drug_name))
     
     fallback_db <- list(
         "TEMOZOLOMIDE" = list(total_trials = 450, source = "Internal DB"),
-        "BEVACIZUMAB" = list(total_trials = 320, source = "Internal DB"),
-        "DOXORUBICIN" = list(total_trials = 52, source = "Internal DB")
+        "BEVACIZUMAB" = list(total_trials = 320, source = "Internal DB")
     )
     
     if(drug_upper %in% names(fallback_db)) return(fallback_db[[drug_upper]])
@@ -358,7 +304,7 @@ get_clinical_trials_fallback <- function(drug_name) {
 }
 
 # ==============================================================================
-# BBB PENETRATION (CRITICAL FIX: NULL CHECKS FOR CACHED DATA)
+# BBB PENETRATION
 # ==============================================================================
 predict_bbb_penetration <- function(chembl_data) {
     if(is.null(chembl_data) || is.null(chembl_data$source) || chembl_data$source == "Unknown") {
@@ -368,7 +314,6 @@ predict_bbb_penetration <- function(chembl_data) {
     score <- 0
     rationale <- c()
     
-    # CRITICAL FIX: Safe field access with NULL checks AND type coercion
     mw <- if(!is.null(chembl_data$molecular_weight)) as.numeric(chembl_data$molecular_weight) else NA
     logp <- if(!is.null(chembl_data$alogp)) as.numeric(chembl_data$alogp) else NA
     psa_val <- if(!is.null(chembl_data$psa)) as.numeric(chembl_data$psa) else NA
@@ -441,8 +386,8 @@ check_drug_interactions <- function(drug_list) {
     
     for(i in 1:(length(drug_list)-1)) {
         for(j in (i+1):length(drug_list)) {
-            drug1 <- toupper(clean_drug_name(drug_list[i]))  # FIX: Clean
-            drug2 <- toupper(clean_drug_name(drug_list[j]))  # FIX: Clean
+            drug1 <- toupper(clean_drug_name(drug_list[i]))
+            drug2 <- toupper(clean_drug_name(drug_list[j]))
             
             key1 <- paste(drug1, drug2, sep="+")
             key2 <- paste(drug2, drug1, sep="+")
@@ -503,7 +448,7 @@ detect_synthetic_lethality <- function(drug_targets, pathway_genes, pathway_name
 }
 
 # ==============================================================================
-# ADMET (CRITICAL FIX: NULL CHECKS)
+# ADMET
 # ==============================================================================
 predict_admet <- function(chembl_data) {
     if(is.null(chembl_data) || is.null(chembl_data$source) || chembl_data$source == "Unknown") {
@@ -513,7 +458,6 @@ predict_admet <- function(chembl_data) {
     
     admet <- list()
     
-    # CRITICAL FIX: Safe field access
     ro5_viol <- if(!is.null(chembl_data$ro5_violations)) chembl_data$ro5_violations else NA
     ro5_pass <- if(!is.na(ro5_viol)) ro5_viol == 0 else FALSE
     admet$absorption <- if(ro5_pass) "GOOD - Passes Lipinski's Rule of 5" else "POOR - Lipinski violations"
@@ -570,7 +514,26 @@ comprehensive_drug_profile <- function(drug_name, pathway_genes = NULL, pathway_
 }
 
 # ==============================================================================
-# PPI NETWORK (RESTORED!)
+# INTEGRATED DRUG SCORING
+# ==============================================================================
+calculate_integrated_score <- function(profile) {
+    # Score = |NES| × BBB × log(Targets+1)
+    nes <- if(!is.null(profile$NES)) abs(profile$NES) else 0
+    bbb <- if(!is.null(profile$bbb$bbb_score) && !is.na(profile$bbb$bbb_score)) profile$bbb$bbb_score else 0
+    targets <- if(!is.null(profile$chembl$targets)) length(profile$chembl$targets) else 0
+    
+    integrated_score <- nes * bbb * log(targets + 1)
+    
+    return(list(
+        integrated_score = integrated_score,
+        nes_component = nes,
+        bbb_component = bbb,
+        targets_component = targets
+    ))
+}
+
+# ==============================================================================
+# PPI NETWORK (PUBLICATION FONTS)
 # ==============================================================================
 create_ppi_network <- function(sig_genes, string_net, string2sym, sym2string, out_prefix, contrast) {
     mapped_ids <- sym2string[sig_genes]
@@ -599,13 +562,14 @@ create_ppi_network <- function(sig_genes, string_net, string2sym, sym2string, ou
         g_main <- induced_subgraph(g, names(comps$membership[comps$membership == which.max(comps$csize)]))
         V(g_main)$type <- ifelse(V(g_main)$name %in% hub_list, "Hub", "Node")
         
+        # PUBLICATION QUALITY: Increased font size to 4
         p_net <- ggraph(g_main, layout="fr") +
             geom_edge_link(alpha=0.2, color="grey70") +
             geom_node_point(aes(color=type, size=type)) +
             scale_color_manual(values=c("Hub"="#E41A1C", "Node"="#377EB8")) +
             scale_size_manual(values=c("Hub"=5, "Node"=2)) +
             geom_node_text(aes(label=ifelse(type=="Hub", name, "")),
-                          repel=TRUE, fontface="bold", size=3.5, bg.color="white") +
+                          repel=TRUE, fontface="bold", size=4, bg.color="white") +
             theme_void() +
             labs(title = paste0("PPI Network: ", contrast),
                  subtitle = sprintf("%d proteins, %d interactions | Red = Hubs", 
@@ -758,6 +722,7 @@ create_polypharm_network <- function(drug_results, pathway_results, out_prefix, 
         V(g)$type <- ifelse(V(g)$name %in% drugs$Drug, "Drug", "Pathway")
         V(g)$multi_target <- V(g)$name %in% multi_target
         
+        # PUBLICATION QUALITY: Increased font size to 4
         p <- ggraph(g, layout = "fr") +
             geom_edge_link(aes(width = weight), alpha = 0.3, color = "grey60") +
             scale_edge_width(range = c(0.5, 3)) +
@@ -767,7 +732,7 @@ create_polypharm_network <- function(drug_results, pathway_results, out_prefix, 
             scale_size_manual(values = c("Drug" = 6, "Pathway" = 4)) +
             scale_shape_manual(values = c("Multi-target" = 17, "Single" = 16)) +
             geom_node_text(aes(label = name, fontface = ifelse(multi_target, "bold", "plain")),
-                           repel = TRUE, size = 3, max.overlaps = 50, bg.color = "white") +
+                           repel = TRUE, size = 4, max.overlaps = 50, bg.color = "white") +
             theme_void() +
             labs(title = paste0("Polypharmacology Network: ", contrast),
                  subtitle = "Triangles = Multi-target drugs | All nodes labeled") +
@@ -784,7 +749,61 @@ create_polypharm_network <- function(drug_results, pathway_results, out_prefix, 
 }
 
 # ==============================================================================
-# HTML REPORTING (FIX: All data now displayed)
+# NEW: 2D DRUG CANDIDATE PLOT
+# ==============================================================================
+create_drug_candidate_2d_plot <- function(drug_profiles, out_prefix, contrast) {
+    if(is.null(drug_profiles) || length(drug_profiles) == 0) return(NULL)
+    
+    tryCatch({
+        plot_df <- data.frame()
+        
+        for(profile in drug_profiles) {
+            nes <- if(!is.null(profile$NES)) abs(profile$NES) else NA
+            bbb <- if(!is.null(profile$bbb$bbb_score) && !is.na(profile$bbb$bbb_score)) profile$bbb$bbb_score else NA
+            targets <- if(!is.null(profile$chembl$targets)) length(profile$chembl$targets) else 0
+            
+            if(!is.na(nes) && !is.na(bbb)) {
+                plot_df <- rbind(plot_df, data.frame(
+                    Drug = substr(clean_drug_name(profile$drug_name), 1, 20),
+                    NES = nes,
+                    BBB = bbb,
+                    Targets = targets,
+                    Polypharmacology = ifelse(targets >= 3, "Multi-target (≥3)", "Single/Dual target"),
+                    stringsAsFactors = FALSE
+                ))
+            }
+        }
+        
+        if(nrow(plot_df) == 0) return(NULL)
+        
+        p <- ggplot(plot_df, aes(x = NES, y = BBB, color = Polypharmacology, size = Targets)) +
+            geom_point(alpha = 0.7) +
+            geom_text_repel(aes(label = Drug), size = 3, max.overlaps = 20) +
+            geom_hline(yintercept = BBB_SCORE_THRESHOLD, linetype = "dashed", color = "red", alpha = 0.5) +
+            geom_vline(xintercept = 1.0, linetype = "dashed", color = "blue", alpha = 0.5) +
+            scale_color_manual(values = c("Multi-target (≥3)" = "#e74c3c", "Single/Dual target" = "#3498db")) +
+            scale_size_continuous(range = c(3, 10)) +
+            labs(title = paste0("Drug Candidates: NES vs BBB (", contrast, ")"),
+                 subtitle = "Color = Polypharmacology | Size = Number of targets",
+                 x = "|NES| (Enrichment Strength)",
+                 y = "BBB Penetration Score") +
+            theme_minimal(base_size = 12) +
+            theme(plot.title = element_text(face = "bold", hjust = 0.5),
+                  legend.position = "bottom")
+        
+        ggsave(paste0(out_prefix, "_", contrast, "_DrugCandidates_2D_mqc.pdf"), p, width=12, height=10)
+        ggsave(paste0(out_prefix, "_", contrast, "_DrugCandidates_2D_mqc.png"), p, width=12, height=10, dpi=300, bg="white")
+        
+        cat("  [SUCCESS] 2D Drug Candidate Plot created\n")
+        return(p)
+    }, error = function(e) {
+        cat("ERROR 2D plot:", e$message, "\n")
+        return(NULL)
+    })
+}
+
+# ==============================================================================
+# HTML REPORTING (ENHANCED)
 # ==============================================================================
 html_buffer <- character()
 
@@ -794,7 +813,7 @@ init_html <- function() {
 <html>
 <head>
 <meta charset='UTF-8'>
-<title>Brain Cancer Drug Discovery Report - v8 ULTIMATE</title>
+<title>Brain Cancer Drug Discovery Report - v6 SUPREME</title>
 <style>
 body { font-family: 'Segoe UI', sans-serif; max-width: 1600px; margin: 40px auto; padding: 20px; background: #f5f7fa; }
 .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px; }
@@ -804,6 +823,7 @@ body { font-family: 'Segoe UI', sans-serif; max-width: 1600px; margin: 40px auto
 .bbb-header { background: #9b59b6; }
 .ppi-header { background: #8e44ad; }
 .ddi-header { background: #c0392b; }
+.multi-target-header { background: #e67e22; }
 .drug-profile-card { background: #f8f9fa; border: 2px solid #dee2e6; padding: 20px; margin: 15px 0; border-radius: 8px; }
 .bbb-score-high { background: #27ae60; color: white; padding: 5px 10px; border-radius: 3px; font-weight: bold; }
 .bbb-score-med { background: #f39c12; color: white; padding: 5px 10px; border-radius: 3px; font-weight: bold; }
@@ -814,12 +834,17 @@ body { font-family: 'Segoe UI', sans-serif; max-width: 1600px; margin: 40px auto
 .ddi-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px; }
 .hub-box { padding: 15px; background: #f9f9fa; border: 1px solid #ddd; border-radius: 5px; font-family: 'Courier New', monospace; color: #d35400; }
 .synleth-box { background: #ffe6e6; border-left: 4px solid #e74c3c; padding: 15px; margin: 10px 0; border-radius: 5px; }
+.multi-target-box { background: #fff0e6; border-left: 4px solid #e67e22; padding: 15px; margin: 10px 0; border-radius: 5px; }
+.score-breakdown { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 15px 0; }
+.score-item { background: #e8f4f8; padding: 10px; border-radius: 5px; text-align: center; }
+.star-rating { color: #f39c12; font-size: 18px; }
 </style>
 </head>
 <body>
 <div class='header'>
-<h1>🧠 Brain Cancer Drug Discovery Suite v8 ULTIMATE</h1>
-<p>Complete Integration: ChEMBL | PubChem | ClinicalTrials | BBB | ADMET | PPI | SynLeth</p>
+<h1>🧠 Brain Cancer Drug Discovery Suite v6 SUPREME</h1>
+<p>Enhanced with Integrated Scoring & Publication-Quality Visualizations</p>
+<p>Complete Integration: ChEMBL | PubChem | ClinicalTrials | BBB | ADMET | PPI | SynLeth | Polypharmacology</p>
 <p>Generated: ", Sys.Date(), "</p>
 </div>
 ")
@@ -833,16 +858,21 @@ add_contrast_header <- function(cid, n_genes, n_up, n_dn) {
     ))
 }
 
-# FIX: Actually display drug profiles!
 add_drug_profile_section <- function(drug_profiles) {
     if(is.null(drug_profiles) || length(drug_profiles) == 0) return()
     
-    html_buffer <<- c(html_buffer, "<div class='section-header drug-header'>💊 Drug Profiles (Sorted by NES - Most Therapeutic First)</div>")
+    html_buffer <<- c(html_buffer, "<div class='section-header drug-header'>💊 Drug Profiles (Ranked by Integrated Score)</div>")
     
     for(profile in drug_profiles) {
         drug_card <- paste0("<div class='drug-profile-card'>")
         
-        # HEADER with NES and FDR prominently displayed
+        # Calculate scoring components
+        scoring <- calculate_integrated_score(profile)
+        
+        # Star rating based on integrated score
+        stars <- if(scoring$integrated_score >= 2.0) "★★★" else 
+                 if(scoring$integrated_score >= 1.0) "★★" else "★"
+        
         nes_val <- if(!is.null(profile$NES)) round(profile$NES, 3) else NA
         fdr_val <- if(!is.null(profile$p.adjust)) profile$p.adjust else NA
         rank_val <- if(!is.null(profile$rank)) profile$rank else "?"
@@ -853,7 +883,28 @@ add_drug_profile_section <- function(drug_profiles) {
         
         drug_card <- paste0(drug_card,
             "<h3 style='margin-top:0; color:#2c3e50;'>",
-            "#", rank_val, " - ", clean_drug_name(profile$drug_name), "</h3>",
+            "#", rank_val, " - ", clean_drug_name(profile$drug_name),
+            " <span class='star-rating'>", stars, "</span></h3>",
+            
+            "<div class='score-breakdown'>",
+            "<div class='score-item'>",
+            "<strong>Integrated Score</strong><br>",
+            "<span style='font-size:20px; color:#e74c3c;'>", round(scoring$integrated_score, 3), "</span>",
+            "</div>",
+            "<div class='score-item'>",
+            "<strong>|NES|</strong><br>",
+            "<span style='font-size:18px;'>", round(scoring$nes_component, 3), "</span>",
+            "</div>",
+            "<div class='score-item'>",
+            "<strong>BBB Score</strong><br>",
+            "<span style='font-size:18px;'>", round(scoring$bbb_component, 3), "</span>",
+            "</div>",
+            "<div class='score-item'>",
+            "<strong>Targets</strong><br>",
+            "<span style='font-size:18px;'>", scoring$targets_component, "</span>",
+            "</div>",
+            "</div>",
+            
             "<div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin:15px 0;'>",
             "<div style='background:#f0f8ff; padding:10px; border-radius:5px;'>",
             "<strong>NES (Enrichment):</strong><br>",
@@ -924,7 +975,46 @@ add_drug_profile_section <- function(drug_profiles) {
     }
 }
 
-# FIX: Display drug-drug interactions
+add_multi_target_section <- function(multi_target_drugs, drug_profiles) {
+    if(is.null(multi_target_drugs) || length(multi_target_drugs) == 0) return()
+    
+    html_buffer <<- c(html_buffer, paste0(
+        "<div class='section-header multi-target-header'>🎯 Multi-Target Drugs (Polypharmacology)</div>",
+        "<p><strong>These drugs target MULTIPLE enriched pathways simultaneously (≥3 pathways).</strong></p>",
+        "<p>Multi-target drugs often have broader efficacy, lower resistance, and synergistic effects.</p>",
+        "<p><strong>Identified ", length(multi_target_drugs), " multi-target drugs:</strong></p>"
+    ))
+    
+    for(mt_drug in multi_target_drugs) {
+        matching_profile <- NULL
+        for(profile in drug_profiles) {
+            if(clean_drug_name(profile$drug_name) == mt_drug) {
+                matching_profile <- profile
+                break
+            }
+        }
+        
+        if(!is.null(matching_profile)) {
+            scoring <- calculate_integrated_score(matching_profile)
+            html_buffer <<- c(html_buffer, paste0(
+                "<div class='multi-target-box'>",
+                "<h4 style='margin-top:0;'>🎯 ", mt_drug, "</h4>",
+                "<div style='display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;'>",
+                "<div><strong>Integrated Score:</strong><br>", round(scoring$integrated_score, 3), "</div>",
+                "<div><strong>NES:</strong><br>", if(!is.null(matching_profile$NES)) round(matching_profile$NES, 3) else "N/A", "</div>",
+                "<div><strong>BBB:</strong><br>", if(!is.null(matching_profile$bbb$bbb_score)) matching_profile$bbb$bbb_score else "N/A", "</div>",
+                "<div><strong>Phase:</strong><br>", if(!is.null(matching_profile$chembl$max_phase)) matching_profile$chembl$max_phase else "N/A", "</div>",
+                "</div>",
+                "</div>"
+            ))
+        }
+    }
+    
+    html_buffer <<- c(html_buffer, paste0(
+        "<p><strong>RECOMMENDATION:</strong> Prioritize multi-target drugs for experimental validation.</p>"
+    ))
+}
+
 add_drug_drug_interactions <- function(ddi_results) {
     if(is.null(ddi_results) || length(ddi_results) == 0) return()
     
@@ -940,7 +1030,6 @@ add_drug_drug_interactions <- function(ddi_results) {
     }
 }
 
-# FIX: Display PPI hubs
 add_ppi_section <- function(hub_genes) {
     if(is.null(hub_genes) || length(hub_genes) == 0) return()
     
@@ -989,7 +1078,8 @@ init_cache()
 init_html()
 
 cat("╔════════════════════════════════════════════════════════════════╗\n")
-cat("║          BRAIN CANCER DRUG DISCOVERY SUITE v7 FIXED            ║\n")
+cat("║       BRAIN CANCER DRUG DISCOVERY SUITE v6 SUPREME             ║\n")
+cat("║  Enhanced with Integrated Scoring & Publication Visuals        ║\n")
 cat("╚════════════════════════════════════════════════════════════════╝\n\n")
 
 # Load STRING
@@ -1121,7 +1211,6 @@ for(f in contrasts) {
                         pathway_results_for_integration$ID[1]
                     } else { NULL }
                     
-                    # CRITICAL: Store NES and p.adjust from GSEA results
                     profile <- comprehensive_drug_profile(drug_name, pathway_genes, pathway_name)
                     profile$NES <- top_cands$NES[i]
                     profile$p.adjust <- top_cands$p.adjust[i]
@@ -1130,13 +1219,29 @@ for(f in contrasts) {
                     comprehensive_profiles[[i]] <- profile
                 }
                 
+                # ENHANCED: Calculate integrated scores and re-rank
+                for(i in seq_along(comprehensive_profiles)) {
+                    scoring <- calculate_integrated_score(comprehensive_profiles[[i]])
+                    comprehensive_profiles[[i]]$integrated_score <- scoring$integrated_score
+                    comprehensive_profiles[[i]]$nes_component <- scoring$nes_component
+                    comprehensive_profiles[[i]]$bbb_component <- scoring$bbb_component
+                    comprehensive_profiles[[i]]$targets_component <- scoring$targets_component
+                }
+                
+                # Re-rank by integrated score
+                comprehensive_profiles <- comprehensive_profiles[order(sapply(comprehensive_profiles, function(p) p$integrated_score), decreasing = TRUE)]
+                for(i in seq_along(comprehensive_profiles)) {
+                    comprehensive_profiles[[i]]$rank <- i
+                }
+                
                 # Visualizations
                 create_drug_profile_report(comprehensive_profiles, out_prefix, cid)
+                create_drug_candidate_2d_plot(comprehensive_profiles, out_prefix, cid)
                 
-                # FIX: Actually add profiles to HTML!
+                # Add to HTML
                 add_drug_profile_section(comprehensive_profiles)
                 
-                # FIX: Drug-drug interactions
+                # Drug-drug interactions
                 ddi_results <- check_drug_interactions(all_drug_names)
                 if(length(ddi_results) > 0) {
                     add_drug_drug_interactions(ddi_results)
@@ -1155,13 +1260,14 @@ for(f in contrasts) {
         create_drug_pathway_heatmap(pathway_results_for_integration, drug_results_for_integration, out_prefix, cid)
         polypharm_drugs <- create_polypharm_network(drug_results_for_integration, pathway_results_for_integration, out_prefix, cid)
         
-        # Store in summary
         if(!is.null(polypharm_drugs) && length(polypharm_drugs) > 0) {
+            # Add multi-target section to HTML
+            add_multi_target_section(polypharm_drugs, comprehensive_profiles)
             llm_summary[[cid]]$multi_target_drugs <- polypharm_drugs
         }
     }
     
-    # FIX: PPI Network (RESTORED!)
+    # PPI Network
     hub_list <- create_ppi_network(sig_genes, string_net, string2sym, sym2string, out_prefix, cid)
     
     if(!is.null(hub_list)) {
@@ -1178,119 +1284,38 @@ for(f in contrasts) {
 
 finish_html(out_prefix)
 
-# FIX: LLM Summary includes ALL new fields
+# ==============================================================================
+# ENHANCED LLM SUMMARY
+# ==============================================================================
 cat("\n╔═══════════════════════════════════════════════════════════════╗\n")
-cat("║          LLM SUMMARY (ALL DATA INCLUDED)                       ║\n")
+cat("║          LLM SUMMARY (WITH INTEGRATED SCORING)                 ║\n")
 cat("╚═══════════════════════════════════════════════════════════════╝\n\n")
-
-for(cid in names(llm_summary)) {
-    cat(sprintf("\n=== %s ===\n", cid))
-    cat(sprintf("DE Genes: %d (Up: %d, Down: %d)\n", 
-               llm_summary[[cid]]$n_de_genes,
-               llm_summary[[cid]]$n_up,
-               llm_summary[[cid]]$n_dn))
-    
-    if(!is.null(llm_summary[[cid]]$hub_genes)) {
-        cat(sprintf("Hub Genes: %s\n", paste(head(llm_summary[[cid]]$hub_genes, 10), collapse=", ")))
-    }
-    
-    if(!is.null(llm_summary[[cid]]$drug_profiles) && length(llm_summary[[cid]]$drug_profiles) > 0) {
-        cat(sprintf("\nDrug Candidates (%d total):\n", length(llm_summary[[cid]]$drug_profiles)))
-        
-        for(profile in llm_summary[[cid]]$drug_profiles) {
-            drug_name <- clean_drug_name(profile$drug_name)
-            cat(sprintf("\n  %s:\n", drug_name))
-            
-            if(!is.null(profile$bbb) && !is.na(profile$bbb$bbb_score)) {
-                cat(sprintf("    BBB Score: %.3f (%s)\n", profile$bbb$bbb_score, profile$bbb$bbb_prediction))
-            }
-            
-            if(!is.null(profile$clinical_trials) && profile$clinical_trials$total_trials > 0) {
-                cat(sprintf("    Clinical Trials: %d\n", profile$clinical_trials$total_trials))
-            }
-            
-            if(length(profile$synthetic_lethality) > 0) {
-                cat(sprintf("    Synthetic Lethality Hits: %d\n", length(profile$synthetic_lethality)))
-            }
-            
-            if(!is.null(profile$admet)) {
-                cat(sprintf("    ADMET: %s\n", profile$admet$absorption))
-            }
-        }
-    }
-    
-    if(!is.null(llm_summary[[cid]]$drug_drug_interactions) && length(llm_summary[[cid]]$drug_drug_interactions) > 0) {
-        cat(sprintf("\nDrug-Drug Interactions: %d\n", length(llm_summary[[cid]]$drug_drug_interactions)))
-    }
-}
-
-cat("\n✅ Analysis Complete!\n")
-cat(sprintf("HTML Report: %s/Analysis_Narrative_mqc.html\n", dirname(out_prefix)))
-cat(sprintf("Cache: %s/\n", CACHE_DIR))
-
-# ==============================================================================
-# EXPORT COMPREHENSIVE DRUG PROFILES TO CSV
-# ==============================================================================
-cat("\nLOG: Exporting drug profiles to CSV...\n")
-
-for(cid in names(llm_summary)) {
-    if(!is.null(llm_summary[[cid]]$drug_profiles) && length(llm_summary[[cid]]$drug_profiles) > 0) {
-        
-        drug_export <- data.frame()
-        
-        for(profile in llm_summary[[cid]]$drug_profiles) {
-            drug_name <- clean_drug_name(profile$drug_name)
-            
-            row <- data.frame(
-                Rank = if(!is.null(profile$rank)) profile$rank else NA,
-                Drug = drug_name,
-                NES = if(!is.null(profile$NES)) round(profile$NES, 3) else NA,
-                FDR = if(!is.null(profile$p.adjust)) profile$p.adjust else NA,
-                SetSize = if(!is.null(profile$setSize)) profile$setSize else NA,
-                ChEMBL_ID = if(!is.null(profile$chembl$chembl_id)) profile$chembl$chembl_id else NA,
-                Phase = if(!is.null(profile$chembl$max_phase)) profile$chembl$max_phase else NA,
-                MW = if(!is.null(profile$chembl$molecular_weight)) as.numeric(profile$chembl$molecular_weight) else NA,
-                LogP = if(!is.null(profile$chembl$alogp)) as.numeric(profile$chembl$alogp) else NA,
-                PSA = if(!is.null(profile$chembl$psa)) as.numeric(profile$chembl$psa) else NA,
-                HBA = if(!is.null(profile$chembl$hba)) as.numeric(profile$chembl$hba) else NA,
-                HBD = if(!is.null(profile$chembl$hbd)) as.numeric(profile$chembl$hbd) else NA,
-                Lipinski_Violations = if(!is.null(profile$chembl$ro5_violations)) as.numeric(profile$chembl$ro5_violations) else NA,
-                BBB_Score = if(!is.null(profile$bbb$bbb_score)) profile$bbb$bbb_score else NA,
-                BBB_Prediction = if(!is.null(profile$bbb$bbb_prediction)) profile$bbb$bbb_prediction else NA,
-                Clinical_Trials = if(!is.null(profile$clinical_trials$total_trials)) profile$clinical_trials$total_trials else 0,
-                Synthetic_Lethality_Hits = length(profile$synthetic_lethality),
-                ADMET_Absorption = if(!is.null(profile$admet$absorption)) profile$admet$absorption else NA,
-                Targets = if(!is.null(profile$chembl$targets) && length(profile$chembl$targets) > 0) 
-                    paste(profile$chembl$targets, collapse=";") else NA,
-                stringsAsFactors = FALSE
-            )
-            
-            drug_export <- rbind(drug_export, row)
-        }
-        
-        # Already sorted by rank (which follows NES order)
-        write.csv(drug_export, 
-                  paste0(dirname(out_prefix), "/", cid, "_Drug_Profiles_Comprehensive.csv"),
-                  row.names = FALSE)
-        
-        cat(sprintf("  ✓ Exported %d drug profiles for %s\n", nrow(drug_export), cid))
-    }
-}
-
-# ==============================================================================
-# GENERATE COMPREHENSIVE LLM PROMPT (TXT FORMAT - LIKE V6)
-# ==============================================================================
-cat("\nLOG: Generating Comprehensive LLM Prompt...\n")
 
 txt_prompt <- c(
     "╔══════════════════════════════════════════════════════════════════════════╗",
-    "║   BRAIN CANCER DRUG DISCOVERY SUITE v8 ULTIMATE - LLM ANALYSIS PROMPT   ║",
-    "║        Complete Integration: Pathways | Drugs | BBB | ADMET | PPI       ║",
+    "║   BRAIN CANCER DRUG DISCOVERY SUITE v6 SUPREME - LLM ANALYSIS PROMPT    ║",
+    "║     Enhanced with Integrated Scoring & Multi-Target Analysis             ║",
     "╚══════════════════════════════════════════════════════════════════════════╝",
     "",
     paste0("Generated: ", Sys.Date()),
     paste0("Analysis Suite: GSEA + DSigDB + ChEMBL + PubChem + ClinicalTrials + STRING"),
-    paste0("Enhanced Features: BBB prediction | ADMET | Synthetic lethality | Drug-drug interactions"),
+    paste0("Enhanced Features: BBB prediction | ADMET | Synthetic lethality | Integrated Scoring | Polypharmacology"),
+    "",
+    "===============================================================================",
+    "INTEGRATED DRUG SCORING FORMULA",
+    "===============================================================================",
+    "",
+    "Integrated Score = |NES| × BBB × log(Targets+1)",
+    "",
+    "This formula combines three critical dimensions:",
+    "  • |NES|: Strength of drug's opposition to disease signature",
+    "  • BBB: Ability to penetrate blood-brain barrier (0-1 scale)",
+    "  • log(Targets+1): Polypharmacology benefit (multi-target drugs favored)",
+    "",
+    "Star Ratings:",
+    "  ★★★ = Integrated Score ≥ 2.0 (Exceptional candidate)",
+    "  ★★  = Integrated Score ≥ 1.0 (Strong candidate)",
+    "  ★   = Integrated Score < 1.0 (Moderate candidate)",
     "",
     "===============================================================================",
     "ANALYSIS OVERVIEW",
@@ -1313,41 +1338,85 @@ for(cid in names(llm_summary)) {
         ""
     )
     
-    # TOP 10 DRUGS QUICK REFERENCE
+    # TOP 10 DRUGS WITH INTEGRATED SCORES
     if(!is.null(summ$drug_profiles) && length(summ$drug_profiles) > 0) {
         txt_prompt <- c(txt_prompt,
-            "TOP 10 DRUG CANDIDATES - QUICK REFERENCE:",
-            paste0(rep("=", 79), collapse=""),
-            sprintf("%-4s %-30s %-8s %-10s %-8s %-6s", "Rank", "Drug", "NES", "FDR", "BBB", "Phase"),
-            paste0(rep("-", 79), collapse="")
+            "TOP 10 DRUG CANDIDATES - INTEGRATED SCORING:",
+            paste0(rep("=", 95), collapse=""),
+            sprintf("%-4s %-25s %-10s %-8s %-8s %-8s %-8s %s", 
+                   "Rank", "Drug", "IntScore", "|NES|", "BBB", "Targets", "Phase", "Rating"),
+            paste0(rep("-", 95), collapse="")
         )
         
         for(i in 1:min(10, length(summ$drug_profiles))) {
             profile <- summ$drug_profiles[[i]]
-            drug_name <- clean_drug_name(profile$drug_name)
-            nes_str <- if(!is.null(profile$NES)) sprintf("%.3f", profile$NES) else "N/A"
-            fdr_str <- if(!is.null(profile$p.adjust)) sprintf("%.2e", profile$p.adjust) else "N/A"
-            bbb_str <- if(!is.null(profile$bbb$bbb_score)) sprintf("%.3f", profile$bbb$bbb_score) else "N/A"
+            drug_name <- substr(clean_drug_name(profile$drug_name), 1, 25)
+            int_score <- if(!is.null(profile$integrated_score)) sprintf("%.3f", profile$integrated_score) else "N/A"
+            nes_str <- if(!is.null(profile$nes_component)) sprintf("%.3f", profile$nes_component) else "N/A"
+            bbb_str <- if(!is.null(profile$bbb_component)) sprintf("%.3f", profile$bbb_component) else "N/A"
+            targets_str <- if(!is.null(profile$targets_component)) as.character(profile$targets_component) else "0"
             phase_str <- if(!is.null(profile$chembl$max_phase)) as.character(profile$chembl$max_phase) else "N/A"
             
-            # Add stars for exceptional candidates
-            stars <- ""
-            if(!is.null(profile$NES) && !is.null(profile$bbb$bbb_score)) {
-                if(profile$NES < -1.5 && profile$bbb$bbb_score >= 0.5) stars <- " ★★★"
-                else if(profile$NES < -1.2 && profile$bbb$bbb_score >= 0.5) stars <- " ★★"
-                else if(profile$NES < -1.0) stars <- " ★"
-            }
+            stars <- if(!is.null(profile$integrated_score)) {
+                if(profile$integrated_score >= 2.0) "★★★" else 
+                if(profile$integrated_score >= 1.0) "★★" else "★"
+            } else { "" }
             
             txt_prompt <- c(txt_prompt,
-                sprintf("%-4s %-30s %-8s %-10s %-8s %-6s%s", 
-                       paste0("#", i), substr(drug_name, 1, 30), nes_str, fdr_str, bbb_str, phase_str, stars)
+                sprintf("%-4s %-25s %-10s %-8s %-8s %-8s %-8s %s", 
+                       paste0("#", i), drug_name, int_score, nes_str, bbb_str, targets_str, phase_str, stars)
             )
         }
         
         txt_prompt <- c(txt_prompt,
-            paste0(rep("=", 79), collapse=""),
+            paste0(rep("=", 95), collapse=""),
             "",
-            "Legend: ★★★ = Exceptional (NES<-1.5, BBB≥0.5) | ★★ = Very Good | ★ = Good",
+            "Legend:",
+            "  IntScore = Integrated Score (|NES| × BBB × log(Targets+1))",
+            "  ★★★ = Exceptional (≥2.0) | ★★ = Strong (≥1.0) | ★ = Moderate (<1.0)",
+            ""
+        )
+    }
+    
+    # MULTI-TARGET DRUGS
+    if(!is.null(summ$multi_target_drugs) && length(summ$multi_target_drugs) > 0) {
+        txt_prompt <- c(txt_prompt,
+            "===============================================================================",
+            "MULTI-TARGET DRUGS (POLYPHARMACOLOGY)",
+            "===============================================================================",
+            "",
+            paste0("Identified ", length(summ$multi_target_drugs), " drugs targeting ≥3 enriched pathways:"),
+            ""
+        )
+        
+        for(mt_drug in summ$multi_target_drugs) {
+            matching_profile <- NULL
+            for(profile in summ$drug_profiles) {
+                if(clean_drug_name(profile$drug_name) == mt_drug) {
+                    matching_profile <- profile
+                    break
+                }
+            }
+            
+            if(!is.null(matching_profile)) {
+                txt_prompt <- c(txt_prompt,
+                    paste0("  🎯 ", mt_drug),
+                    paste0("      Integrated Score: ", round(matching_profile$integrated_score, 3)),
+                    paste0("      |NES|: ", round(matching_profile$nes_component, 3)),
+                    paste0("      BBB: ", round(matching_profile$bbb_component, 3)),
+                    paste0("      Targets: ", matching_profile$targets_component),
+                    paste0("      Phase: ", if(!is.null(matching_profile$chembl$max_phase)) matching_profile$chembl$max_phase else "N/A"),
+                    ""
+                )
+            }
+        }
+        
+        txt_prompt <- c(txt_prompt,
+            "RATIONALE FOR PRIORITIZATION:",
+            "  • Multi-target drugs modulate multiple disease pathways simultaneously",
+            "  • Lower risk of resistance development",
+            "  • Potential for synergistic therapeutic effects",
+            "  • Enhanced integrated scores due to polypharmacology bonus",
             ""
         )
     }
@@ -1356,201 +1425,85 @@ for(cid in names(llm_summary)) {
     if(!is.null(summ$hub_genes)) {
         txt_prompt <- c(txt_prompt,
             "PPI NETWORK HUB GENES:",
-            "  (Highly connected proteins - potential therapeutic targets)",
+            "  (Master regulators with high connectivity)",
             paste0("    • ", paste(summ$hub_genes, collapse=", ")),
-            "  ",
-            "  Interpretation:",
-            "    - Hub genes are master regulators with many protein interactions",
-            "    - Disrupting hubs affects multiple pathways simultaneously",
-            "    - Prime candidates for drug targeting",
             ""
         )
     }
     
-    # COMPREHENSIVE DRUG CANDIDATE PROFILES
+    # COMPREHENSIVE DRUG PROFILES
     if(!is.null(summ$drug_profiles) && length(summ$drug_profiles) > 0) {
         txt_prompt <- c(txt_prompt,
             "===============================================================================",
-            "THERAPEUTIC DRUG CANDIDATES (COMPREHENSIVE PROFILES)",
+            "COMPREHENSIVE DRUG CANDIDATE PROFILES",
             "===============================================================================",
             "",
-            paste0("Total candidates identified: ", length(summ$drug_profiles)),
-            "Ranking: Sorted by NES (most negative = strongest opposition to disease)",
-            "",
-            "KEY METRICS:",
-            "  • NES (Normalized Enrichment Score): Measures how well drug signature opposes disease",
-            "    - MORE NEGATIVE = BETTER (drug downregulates disease-upregulated genes)",
-            "    - NES < -2.0: Very strong therapeutic potential",
-            "    - NES < -1.5: Strong therapeutic potential",
-            "    - NES < -1.0: Moderate therapeutic potential",
-            "  • FDR (False Discovery Rate): Statistical significance",
-            "    - FDR < 0.05: Highly significant",
-            "    - FDR < 0.25: Significant (exploratory threshold)",
+            paste0("Total candidates profiled: ", length(summ$drug_profiles)),
+            "Ranked by Integrated Score (|NES| × BBB × log(Targets+1))",
             "",
             paste0(rep("=", 79), collapse=""),
             ""
         )
         
-        for(i in seq_along(summ$drug_profiles)) {
+        for(i in 1:min(TEXT_REPORT_N, length(summ$drug_profiles))) {
             profile <- summ$drug_profiles[[i]]
             drug_name <- clean_drug_name(profile$drug_name)
             
-            # HEADER with rank and GSEA scores
+            stars <- if(!is.null(profile$integrated_score)) {
+                if(profile$integrated_score >= 2.0) "★★★" else 
+                if(profile$integrated_score >= 1.0) "★★" else "★"
+            } else { "" }
+            
             txt_prompt <- c(txt_prompt,
-                paste0("### RANK ", i, ": ", drug_name, " ###"),
+                paste0("### RANK ", i, ": ", drug_name, " ", stars, " ###"),
                 ""
             )
             
-            # GSEA ENRICHMENT SCORES (CRITICAL!)
+            # INTEGRATED SCORING BREAKDOWN
+            if(!is.null(profile$integrated_score)) {
+                txt_prompt <- c(txt_prompt,
+                    "INTEGRATED SCORING:",
+                    paste0("  Total Score: ", round(profile$integrated_score, 3)),
+                    paste0("  • |NES| component: ", round(profile$nes_component, 3)),
+                    paste0("  • BBB component: ", round(profile$bbb_component, 3)),
+                    paste0("  • Targets component (log scale): ", round(log(profile$targets_component + 1), 3)),
+                    paste0("  • Raw target count: ", profile$targets_component),
+                    ""
+                )
+            }
+            
+            # GSEA DATA
             if(!is.null(profile$NES) || !is.null(profile$p.adjust)) {
                 txt_prompt <- c(txt_prompt,
                     "GSEA Enrichment Analysis:",
-                    paste0("  NES (Enrichment Score): ", 
-                           if(!is.null(profile$NES)) round(profile$NES, 3) else "N/A"),
-                    paste0("  FDR (Significance): ", 
-                           if(!is.null(profile$p.adjust)) formatC(profile$p.adjust, format="e", digits=2) else "N/A"),
-                    paste0("  Gene Set Size: ", 
-                           if(!is.null(profile$setSize)) profile$setSize else "N/A", " genes"),
-                    paste0("  Interpretation: ", 
-                           if(!is.null(profile$NES) && profile$NES < -1.5) "★★★ STRONG therapeutic potential" else
-                           if(!is.null(profile$NES) && profile$NES < -1.0) "★★ MODERATE therapeutic potential" else
-                           if(!is.null(profile$NES) && profile$NES < 0) "★ WEAK therapeutic potential" else
-                           "No clear therapeutic signal"),
+                    paste0("  NES: ", if(!is.null(profile$NES)) round(profile$NES, 3) else "N/A"),
+                    paste0("  FDR: ", if(!is.null(profile$p.adjust)) formatC(profile$p.adjust, format="e", digits=2) else "N/A"),
                     ""
                 )
             }
             
-            # ChEMBL Data
-            if(!is.null(profile$chembl) && profile$chembl$source != "Unknown") {
-                txt_prompt <- c(txt_prompt,
-                    "ChEMBL Information:",
-                    paste0("  ChEMBL ID: ", profile$chembl$chembl_id),
-                    paste0("  Development Phase: ", profile$chembl$max_phase, " (0=preclinical, 4=approved)"),
-                    paste0("  Source: ", profile$chembl$source)
-                )
-                
-                if(!is.null(profile$chembl$molecular_weight)) {
-                    txt_prompt <- c(txt_prompt,
-                        "  Molecular Properties:",
-                        paste0("    - Molecular Weight: ", round(as.numeric(profile$chembl$molecular_weight), 2), " Da"),
-                        paste0("    - LogP (lipophilicity): ", round(as.numeric(profile$chembl$alogp), 2)),
-                        paste0("    - PSA (polar surface area): ", round(as.numeric(profile$chembl$psa), 2), " Ų"),
-                        paste0("    - H-bond acceptors: ", profile$chembl$hba),
-                        paste0("    - H-bond donors: ", profile$chembl$hbd),
-                        paste0("    - Lipinski violations: ", profile$chembl$ro5_violations)
-                    )
-                }
-                
-                if(!is.null(profile$chembl$targets) && length(profile$chembl$targets) > 0) {
-                    txt_prompt <- c(txt_prompt,
-                        paste0("  Targets: ", paste(profile$chembl$targets, collapse=", "))
-                    )
-                }
-                txt_prompt <- c(txt_prompt, "")
-            }
-            
-            # BBB Prediction
+            # BBB
             if(!is.null(profile$bbb) && !is.na(profile$bbb$bbb_score)) {
                 txt_prompt <- c(txt_prompt,
-                    "Blood-Brain Barrier (BBB) Penetration:",
-                    paste0("  Score: ", profile$bbb$bbb_score, " (0-1 scale)"),
+                    "BBB Penetration:",
+                    paste0("  Score: ", profile$bbb$bbb_score),
                     paste0("  Prediction: ", profile$bbb$bbb_prediction),
-                    paste0("  Clinical Feasibility: ",
-                           if(profile$bbb$bbb_score >= 0.5) "✓ CAN reach brain tumors" else "✗ May need enhanced delivery"),
-                    "  Rationale:",
-                    paste0("    ", gsub("\n", "\n    ", profile$bbb$rationale)),
                     ""
                 )
             }
             
-            # ADMET
-            if(!is.null(profile$admet)) {
+            # ChEMBL
+            if(!is.null(profile$chembl) && profile$chembl$source != "Unknown") {
                 txt_prompt <- c(txt_prompt,
-                    "ADMET Profile:",
-                    paste0("  Absorption: ", profile$admet$absorption),
-                    paste0("  Distribution: ", profile$admet$distribution),
-                    paste0("  Metabolism: ", profile$admet$metabolism),
-                    paste0("  Excretion: ", profile$admet$excretion),
-                    paste0("  Toxicity: ", profile$admet$toxicity),
+                    "ChEMBL Data:",
+                    paste0("  ID: ", profile$chembl$chembl_id),
+                    paste0("  Phase: ", profile$chembl$max_phase),
+                    paste0("  Targets: ", if(!is.null(profile$chembl$targets)) paste(profile$chembl$targets, collapse=", ") else "None"),
                     ""
                 )
-            }
-            
-            # Clinical Trials
-            if(!is.null(profile$clinical_trials)) {
-                txt_prompt <- c(txt_prompt,
-                    "Clinical Evidence:",
-                    paste0("  Active Trials (brain cancer): ", profile$clinical_trials$total_trials),
-                    paste0("  Source: ", profile$clinical_trials$source),
-                    ""
-                )
-            }
-            
-            # Synthetic Lethality
-            if(length(profile$synthetic_lethality) > 0) {
-                txt_prompt <- c(txt_prompt,
-                    paste0("Synthetic Lethality Opportunities: ", length(profile$synthetic_lethality), " identified"),
-                    "  (Drug targets that are lethal when combined with pathway alterations)"
-                )
-                for(sl in profile$synthetic_lethality) {
-                    txt_prompt <- c(txt_prompt,
-                        paste0("    → ", sl$target, " + ", sl$pathway_gene, ": ", sl$mechanism)
-                    )
-                }
-                txt_prompt <- c(txt_prompt, "")
             }
             
             txt_prompt <- c(txt_prompt, paste0(rep("-", 79), collapse=""), "")
-        }
-        
-        # MULTI-TARGET DRUGS SECTION
-        if(!is.null(summ$multi_target_drugs) && length(summ$multi_target_drugs) > 0) {
-            txt_prompt <- c(txt_prompt,
-                "",
-                "===============================================================================",
-                "MULTI-TARGET DRUGS (POLYPHARMACOLOGY)",
-                "===============================================================================",
-                "",
-                "These drugs target MULTIPLE enriched pathways simultaneously.",
-                "Multi-target drugs often have:",
-                "  • Broader therapeutic efficacy",
-                "  • Lower resistance development", 
-                "  • Synergistic effects on disease mechanisms",
-                "",
-                paste0("Identified ", length(summ$multi_target_drugs), " multi-target drugs (≥3 pathways):"),
-                ""
-            )
-            
-            for(mt_drug in summ$multi_target_drugs) {
-                # Find this drug in comprehensive profiles for more details
-                matching_profile <- NULL
-                for(profile in summ$drug_profiles) {
-                    if(clean_drug_name(profile$drug_name) == mt_drug) {
-                        matching_profile <- profile
-                        break
-                    }
-                }
-                
-                if(!is.null(matching_profile)) {
-                    txt_prompt <- c(txt_prompt,
-                        paste0("  🎯 ", mt_drug),
-                        paste0("      NES: ", if(!is.null(matching_profile$NES)) round(matching_profile$NES, 3) else "N/A"),
-                        paste0("      FDR: ", if(!is.null(matching_profile$p.adjust)) formatC(matching_profile$p.adjust, format="e", digits=2) else "N/A"),
-                        paste0("      BBB: ", if(!is.null(matching_profile$bbb$bbb_score)) matching_profile$bbb$bbb_score else "N/A"),
-                        paste0("      Phase: ", if(!is.null(matching_profile$chembl$max_phase)) matching_profile$chembl$max_phase else "N/A"),
-                        ""
-                    )
-                } else {
-                    txt_prompt <- c(txt_prompt, paste0("  🎯 ", mt_drug), "")
-                }
-            }
-            
-            txt_prompt <- c(txt_prompt,
-                "RECOMMENDATION: Prioritize multi-target drugs for experimental validation.",
-                "Their ability to modulate multiple pathways may provide superior efficacy",
-                "compared to single-target drugs.",
-                ""
-            )
         }
     }
     
@@ -1558,7 +1511,7 @@ for(cid in names(llm_summary)) {
     if(!is.null(summ$drug_drug_interactions) && length(summ$drug_drug_interactions) > 0) {
         txt_prompt <- c(txt_prompt,
             "DRUG-DRUG INTERACTIONS:",
-            paste0("  Total interactions identified: ", length(summ$drug_drug_interactions)),
+            paste0("  Total interactions: ", length(summ$drug_drug_interactions)),
             ""
         )
         for(pair in names(summ$drug_drug_interactions)) {
@@ -1577,99 +1530,90 @@ for(cid in names(llm_summary)) {
 
 txt_prompt <- c(txt_prompt,
     "===============================================================================",
-    "INTERPRETATION GUIDE FOR AI/LLM",
+    "INTERPRETATION GUIDE",
     "===============================================================================",
     "",
-    "1. DRUG PRIORITIZATION CRITERIA:",
-    "   HIGH PRIORITY drugs should have:",
-    "     ✓ BBB Score ≥ 0.5 (can reach brain tumors)",
-    "     ✓ Clinical Phase ≥ 1 (some human safety data)",
-    "     ✓ Active clinical trials in brain cancer",
-    "     ✓ Known targets that overlap with hub genes",
-    "     ✓ Favorable ADMET profile",
+    "1. INTEGRATED SCORE INTERPRETATION:",
+    "   • Score ≥ 2.0: EXCEPTIONAL candidate (strong NES, good BBB, multi-target)",
+    "   • Score ≥ 1.0: STRONG candidate (balanced profile)",
+    "   • Score < 1.0: MODERATE candidate (may have limitations)",
     "",
-    "2. BBB PENETRATION INTERPRETATION:",
-    "   • Score 0.7-1.0: HIGH penetration - excellent for brain tumors",
-    "   • Score 0.5-0.7: MODERATE penetration - may require dose optimization",
-    "   • Score 0.0-0.5: LOW penetration - need delivery strategies",
-    "   ",
-    "   Key predictors:",
-    "   • MW < 400 Da (smaller molecules cross easier)",
-    "   • LogP 1-3 (balanced lipophilicity)",
-    "   • PSA < 90 Ų (lower polarity)",
-    "   • HBD < 3, HBA < 7 (fewer polar interactions)",
+    "2. PRIORITIZATION STRATEGY:",
+    "   a) Focus on drugs with integrated score ≥ 1.0",
+    "   b) Among these, prioritize multi-target drugs (≥3 targets)",
+    "   c) Consider clinical phase and trial activity",
+    "   d) Evaluate BBB penetration for CNS access",
     "",
-    "3. ADMET INTERPRETATION:",
-    "   • Absorption: Can the drug be absorbed orally?",
-    "   • Distribution: Does it reach target tissues?",
-    "   • Metabolism: How quickly is it broken down?",
-    "   • Excretion: How is it eliminated?",
-    "   • Toxicity: Structural alerts for safety concerns?",
+    "3. MULTI-TARGET DRUGS:",
+    "   • Target multiple disease pathways simultaneously",
+    "   • log(Targets+1) component rewards polypharmacology",
+    "   • Triangles in polypharmacology network visualization",
+    "   • Higher likelihood of efficacy in complex diseases",
     "",
-    "4. SYNTHETIC LETHALITY:",
-    "   • Combination of drug target + pathway alteration = cell death",
-    "   • Example: PARP inhibitors + BRCA1 deficiency",
-    "   • Look for drugs whose targets synergize with pathway disruptions",
-    "",
-    "5. CLINICAL VALIDATION PATHWAY:",
-    "   For each prioritized drug:",
-    "   a) Literature review: Existing evidence in brain cancer?",
-    "   b) Mechanism validation: Does it target relevant biology?",
-    "   c) In vitro testing: Cell line sensitivity assays",
-    "   d) In vivo testing: Animal models (if promising)",
-    "   e) Clinical trial design: Phase I/II feasibility",
-    "",
-    "6. MULTI-TARGET DRUGS (if identified):",
-    "   • Drugs affecting multiple enriched pathways",
-    "   • Often more effective than single-target drugs",
-    "   • Lower resistance development",
-    "   • Consider for combination therapy strategies",
-    "",
-    "7. RECOMMENDED ANALYSIS OUTPUTS:",
-    "   • Executive summary: Top 5-10 drug candidates with rationale",
-    "   • Mechanistic model: How drugs connect to disease pathways",
-    "   • Prioritization matrix: BBB × Clinical × Mechanism scoring",
-    "   • Experimental validation plan: Cell lines, assays, endpoints",
-    "   • Clinical development strategy: Regulatory pathway considerations",
+    "4. EXPERIMENTAL VALIDATION:",
+    "   • Start with top 3-5 integrated score candidates",
+    "   • Include at least one multi-target drug if available",
+    "   • Test in vitro before in vivo models",
+    "   • Consider combination therapies for synergy",
     "",
     "===============================================================================",
-    "DATA SOURCES & METHODS",
-    "===============================================================================",
-    "",
-    "ChEMBL: Molecular properties, targets, clinical phase",
-    "PubChem: Chemical structures, identifiers",
-    "ClinicalTrials.gov: Active trials, clinical evidence",
-    "DSigDB: Drug gene signatures for GSEA",
-    "STRING: Protein-protein interaction networks",
-    "",
-    "BBB Prediction Model:",
-    "  • Empirical model based on molecular properties",
-    "  • Weights: MW (25%), LogP (25%), PSA (25%), HBD/HBA (25%)",
-    "  • Validated against known CNS drugs",
-    "",
-    "Synthetic Lethality:",
-    "  • Curated database of known genetic interactions",
-    "  • Focus on cancer-relevant pathways (DNA repair, PI3K, p53)",
-    "",
-    "===============================================================================",
-    "IMPORTANT CAVEATS",
-    "===============================================================================",
-    "",
-    "⚠️  This is COMPUTATIONAL PREDICTION - NOT clinical recommendation",
-    "⚠️  All candidates require experimental validation",
-    "⚠️  BBB scores are estimates based on physicochemical properties",
-    "⚠️  Drug repurposing requires new clinical trials for new indications",
-    "⚠️  Consider: patent status, drug availability, manufacturing feasibility",
-    "⚠️  Regulatory approval needed for any clinical use",
-    "",
-    "===============================================================================",
-    paste0("END OF REPORT | Generated by run_pathways_drugs_v8_ULTIMATE.R | ", Sys.Date()),
+    paste0("END OF REPORT | v6 SUPREME | ", Sys.Date()),
     "==============================================================================="
 )
 
 writeLines(txt_prompt, paste0(dirname(out_prefix), "/LLM_Drug_Discovery_Report.txt"))
 
-cat("✅ Comprehensive LLM Report Generated!\n")
-cat(sprintf("   LLM Report: %s/LLM_Drug_Discovery_Report.txt\n", dirname(out_prefix)))
+# ==============================================================================
+# CSV EXPORT WITH INTEGRATED SCORES
+# ==============================================================================
+cat("\nLOG: Exporting drug profiles with integrated scores to CSV...\n")
+
+for(cid in names(llm_summary)) {
+    if(!is.null(llm_summary[[cid]]$drug_profiles) && length(llm_summary[[cid]]$drug_profiles) > 0) {
+        
+        drug_export <- data.frame()
+        
+        for(profile in llm_summary[[cid]]$drug_profiles) {
+            drug_name <- clean_drug_name(profile$drug_name)
+            
+            row <- data.frame(
+                Rank = if(!is.null(profile$rank)) profile$rank else NA,
+                Drug = drug_name,
+                Integrated_Score = if(!is.null(profile$integrated_score)) round(profile$integrated_score, 3) else NA,
+                NES_Component = if(!is.null(profile$nes_component)) round(profile$nes_component, 3) else NA,
+                BBB_Component = if(!is.null(profile$bbb_component)) round(profile$bbb_component, 3) else NA,
+                Targets_Component = if(!is.null(profile$targets_component)) profile$targets_component else 0,
+                NES = if(!is.null(profile$NES)) round(profile$NES, 3) else NA,
+                FDR = if(!is.null(profile$p.adjust)) profile$p.adjust else NA,
+                SetSize = if(!is.null(profile$setSize)) profile$setSize else NA,
+                ChEMBL_ID = if(!is.null(profile$chembl$chembl_id)) profile$chembl$chembl_id else NA,
+                Phase = if(!is.null(profile$chembl$max_phase)) profile$chembl$max_phase else NA,
+                MW = if(!is.null(profile$chembl$molecular_weight)) as.numeric(profile$chembl$molecular_weight) else NA,
+                LogP = if(!is.null(profile$chembl$alogp)) as.numeric(profile$chembl$alogp) else NA,
+                PSA = if(!is.null(profile$chembl$psa)) as.numeric(profile$chembl$psa) else NA,
+                BBB_Score = if(!is.null(profile$bbb$bbb_score)) profile$bbb$bbb_score else NA,
+                BBB_Prediction = if(!is.null(profile$bbb$bbb_prediction)) profile$bbb$bbb_prediction else NA,
+                Clinical_Trials = if(!is.null(profile$clinical_trials$total_trials)) profile$clinical_trials$total_trials else 0,
+                Synthetic_Lethality_Hits = length(profile$synthetic_lethality),
+                Targets = if(!is.null(profile$chembl$targets) && length(profile$chembl$targets) > 0) 
+                    paste(profile$chembl$targets, collapse=";") else NA,
+                stringsAsFactors = FALSE
+            )
+            
+            drug_export <- rbind(drug_export, row)
+        }
+        
+        write.csv(drug_export, 
+                  paste0(dirname(out_prefix), "/", cid, "_Drug_Profiles_IntegratedScoring.csv"),
+                  row.names = FALSE)
+        
+        cat(sprintf("  ✓ Exported %d drug profiles for %s\n", nrow(drug_export), cid))
+    }
+}
+
+cat("\n✅ Analysis Complete!\n")
+cat(sprintf("HTML Report: %s/Analysis_Narrative_mqc.html\n", dirname(out_prefix)))
+cat(sprintf("LLM Report: %s/LLM_Drug_Discovery_Report.txt\n", dirname(out_prefix)))
+cat(sprintf("Cache: %s/\n", CACHE_DIR))
 
 writeLines(capture.output(sessionInfo()), paste0(dirname(out_prefix), "/sessionInfo.txt"))
