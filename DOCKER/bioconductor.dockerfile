@@ -175,4 +175,9 @@ RUN R -e "install.packages(c('ggpubr', 'rstatix', 'UpSetR'), repos='http://cran.
 # ------------------------------------------------------------------------------
 RUN R -e "install.packages(c('cowplot', 'magick', 'tibble', 'gridExtra'), repos='http://cran.rstudio.com/')"
 
+# ------------------------------------------------------------------------------
+# # LAYER 25: Text Rendering Extensions (Fixes ggtext error)
+# # ------------------------------------------------------------------------------
+RUN R -e "install.packages('ggtext', repos='http://cran.rstudio.com/')"
+
 WORKDIR /data
