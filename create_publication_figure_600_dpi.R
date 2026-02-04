@@ -2,10 +2,12 @@
 # ==============================================================================
 # PUBLICATION FIGURE GENERATOR - 9-PANEL (A-I) - VOLCANO VERSION - COMPLETE
 # ==============================================================================
-# FIXES:
-# - ✅ Panel G: Heatmap column labels rotated -60° (to the right) with proper positioning
-# - ✅ Panel G: Heatmap properly centered in its subpanel space
-# - ✅ ImageMagick command: Fixed to use absolute paths and proper working directory
+# LATEST FIXES:
+# - ✅ Panel G: Heatmap rendered at full size (no cropping)
+# - ✅ Panel G: Pathway names NOT truncated (full length preserved)
+# - ✅ Panel G: Title padding increased to prevent cropping
+# - ✅ Panel G: Heatmap dynamically shrunk to fit panel
+# - ✅ Caption: Single string with natural wrapping (no forced line breaks)
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -415,7 +417,6 @@ p_pca <- ggplot(pcaData, aes(x = PC1, y = PC2)) +
 
 p_panel_a_combined <- ((p_pca | p_scree) + plot_layout(widths = c(2.5, 1)))
 
-# FIXED: Add label A in foreground
 p_panel_a <- ggdraw(p_panel_a_combined) +
     draw_label("A", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
 
@@ -431,9 +432,9 @@ contrast_labels <- c(
     "total_evolution" = "Culture vs Recurrent"
 )
 contrast_colors <- c(
-    "brain_adaptation" = "#1f77b4",   # Blue
-    "therapy_impact" = "#ff7f0e",      # Orange
-    "total_evolution" = "#2ca02c"      # Green
+    "brain_adaptation" = "#1f77b4",
+    "therapy_impact" = "#ff7f0e",
+    "total_evolution" = "#2ca02c"
 )
 
 volcano_data_list <- list()
@@ -483,15 +484,13 @@ volcano_data$neglog10p <- -log10(volcano_data$padj)
 volcano_data$neglog10p <- pmin(volcano_data$neglog10p, 50)
 volcano_data$log2FoldChange <- pmax(pmin(volcano_data$log2FoldChange, 10), -10)
 
-# FIXED: Set different alpha values - green is MUCH more transparent to see blue/orange
-volcano_data$alpha_value <- ifelse(volcano_data$Contrast == "total_evolution", 0.15,  # Green very transparent
-                                    ifelse(volcano_data$Contrast == "therapy_impact", 0.5,   # Orange medium
-                                           0.5))  # Blue medium
+volcano_data$alpha_value <- ifelse(volcano_data$Contrast == "total_evolution", 0.15,
+                                    ifelse(volcano_data$Contrast == "therapy_impact", 0.5,
+                                           0.5))
 
-# FIXED: MUCH MORE vertical spacing to prevent label overlap (49, 42, 35 instead of 47, 41, 35)
 text_annotations <- data.frame(
     x = c(-7, -7, -7, 7, 7, 7),
-    y = c(49, 42, 35, 49, 42, 35),  # Even more spacing: 7 units between each
+    y = c(49, 42, 35, 49, 42, 35),
     label = c(
         paste0(gene_counts$Label[1], "\n↓ ", gene_counts$Down[1]),
         paste0(gene_counts$Label[2], "\n↓ ", gene_counts$Down[2]),
@@ -506,10 +505,9 @@ text_annotations$Color <- contrast_colors[text_annotations$Contrast]
 
 p_panel_b_plot <- ggplot(volcano_data, aes(x = log2FoldChange, y = neglog10p)) +
     geom_point(aes(color = Contrast, shape = Contrast, alpha = alpha_value), size = 1.5) +
-    scale_alpha_identity() +  # Use the custom alpha values
+    scale_alpha_identity() +
     geom_hline(yintercept = -log10(PADJ_CUTOFF), linetype = "dashed", color = "grey30", linewidth = 0.6) +
     geom_vline(xintercept = c(-LOG2FC_CUTOFF, LOG2FC_CUTOFF), linetype = "dashed", color = "grey30", linewidth = 0.6) +
-    # Add threshold labels
     annotate("text", x = 9, y = -log10(PADJ_CUTOFF) + 2,
              label = paste0("FDR = ", PADJ_CUTOFF), size = 4, color = "grey30", fontface = "bold") +
     annotate("text", x = LOG2FC_CUTOFF, y = 48,
@@ -521,9 +519,9 @@ p_panel_b_plot <- ggplot(volcano_data, aes(x = log2FoldChange, y = neglog10p)) +
               size = 5, fontface = "bold", hjust = 0.5, vjust = 0.5,
               show.legend = FALSE) +
     scale_color_manual(values = contrast_colors, name = "Contrast", labels = contrast_labels) +
-    scale_shape_manual(values = c("brain_adaptation" = 16,      # Circle
-                                   "therapy_impact" = 17,         # Triangle
-                                   "total_evolution" = 4),        # X
+    scale_shape_manual(values = c("brain_adaptation" = 16,
+                                   "therapy_impact" = 17,
+                                   "total_evolution" = 4),
                        name = "Contrast", labels = contrast_labels) +
     labs(title = "Differential Expression Across Contrasts",
          subtitle = paste0("Thresholds: FDR < ", PADJ_CUTOFF, ", |log2FC| > ", LOG2FC_CUTOFF),
@@ -535,7 +533,6 @@ p_panel_b_plot <- ggplot(volcano_data, aes(x = log2FoldChange, y = neglog10p)) +
           legend.title = element_text(size = 13, face = "bold"),
           plot.subtitle = element_text(size = 11, color = "grey40", hjust = 0.5))
 
-# FIXED: Add label B in foreground
 p_panel_b <- ggdraw(p_panel_b_plot) +
     draw_label("B", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
 
@@ -705,7 +702,6 @@ if(nrow(sig_annotations) > 0) {
                  size = 5, fontface = "bold", color = "black")
 }
 
-# FIXED: Add label C in foreground
 p_panel_c <- ggdraw(p_panel_c_plot) +
     draw_label("C", x = 0.02, y = 0.98, fontface = "bold", size = 24, color = "black")
 
@@ -965,7 +961,7 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
 }
 
 # ==============================================================================
-# PANEL G: DRUG-PATHWAY HEATMAP - FIXED POSITIONING AND ROTATION
+# PANEL G: DRUG-PATHWAY HEATMAP - FIXED CROPPING AND TRUNCATION
 # ==============================================================================
 cat("Panel G: Creating Drug-Pathway Heatmap...\n")
 
@@ -989,11 +985,15 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
             }
         }
 
-        rownames(overlap_mat) <- substr(clean_drug_names_vectorized(rownames(overlap_mat)), 1, 40)
-        colnames(overlap_mat) <- substr(colnames(overlap_mat), 1, 60)
+        # FIXED: Don't truncate names - keep full length
+        rownames(overlap_mat) <- clean_drug_names_vectorized(rownames(overlap_mat))
+        colnames(overlap_mat) <- colnames(overlap_mat)  # Keep full pathway names
 
         if(nrow(overlap_mat) > 0 && ncol(overlap_mat) > 0) {
-            # FIXED: Rotate column names -60 degrees (to the right), ensure proper spacing
+            # FIXED: Render at very high resolution with generous padding to prevent cropping
+            temp_heatmap_file <- tempfile(fileext = ".png")
+            png(temp_heatmap_file, width = 6000, height = 6000, res = 600)  # Higher resolution
+            
             ht <- Heatmap(overlap_mat, name = "Genes",
                           col = colorRamp2(c(0, max(overlap_mat)/2, max(overlap_mat)),
                                            c("white", "#fee090", "#d73027")),
@@ -1002,32 +1002,29 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
                           column_title_gp = gpar(fontsize = 28, fontface = "bold"),
                           row_names_gp = gpar(fontsize = 18),
                           column_names_gp = gpar(fontsize = 16),
-                          column_names_rot = -60,  # FIXED: -60 degrees = rotate to the right
+                          column_names_rot = -60,
                           column_names_side = "bottom",
                           heatmap_legend_param = list(title_gp = gpar(fontsize = 22),
                                                       labels_gp = gpar(fontsize = 20)),
                           width = unit(6, "inches"),
                           height = unit(6, "inches"),
-                          row_names_max_width = unit(2.5, "inches"),
-                          column_names_max_height = unit(4, "inches"),
+                          row_names_max_width = unit(3, "inches"),  # More space for drug names
+                          column_names_max_height = unit(5, "inches"),  # More space for pathway names
                           bottom_annotation = NULL)
-
-            # FIXED: Render heatmap at high resolution, then dynamically shrink to fit subpanel
-            temp_heatmap_file <- tempfile(fileext = ".png")
-            png(temp_heatmap_file, width = 4000, height = 4000, res = 400)  # High res render
-            draw(ht, padding = unit(c(2, 2, 10, 2), "mm"))
-            dev.off()
             
+            # FIXED: Much more generous padding to prevent any cropping
+            draw(ht, padding = unit(c(15, 15, 25, 15), "mm"))  # top, right, bottom, left
+            dev.off()
+
             # Read back and create ggplot that will scale to fit
             hm_img <- png::readPNG(temp_heatmap_file)
-            p_panel_g_plot <- ggplot() + 
+            p_panel_g_plot <- ggplot() +
                 annotation_raster(hm_img, xmin = 0, xmax = 1, ymin = 0, ymax = 1) +
                 scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
                 scale_y_continuous(expand = c(0, 0), limits = c(0, 1)) +
-                coord_fixed(ratio = 1) +  # Maintain aspect ratio
                 theme_void() +
-                theme(plot.margin = margin(5, 5, 5, 5))
-            
+                theme(plot.margin = margin(0, 0, 0, 0))  # No extra margin, let it fill the space
+
             unlink(temp_heatmap_file)
 
             p_panel_g <- ggdraw(p_panel_g_plot) +
@@ -1089,7 +1086,6 @@ if(length(drug_profiles) > 0) {
                        color = "black") +
         geom_hline(yintercept = BBB_SCORE_THRESHOLD, linetype = "dashed", color = "red", alpha = 0.5, linewidth = 0.6) +
         geom_vline(xintercept = 1.0, linetype = "dashed", color = "blue", alpha = 0.5, linewidth = 0.6) +
-        # Add threshold labels
         annotate("text", x = max(plot_df$NES) - 0.3, y = BBB_SCORE_THRESHOLD + 0.05,
                  label = paste0("BBB = ", BBB_SCORE_THRESHOLD), size = 4, color = "red", fontface = "bold") +
         scale_color_viridis_c(option = "plasma", name = "Pathway\nHits", begin = 0.2, end = 0.9) +
@@ -1182,7 +1178,6 @@ main_figure <- (p_panel_a | p_panel_b | p_panel_c) /
                (p_panel_d | p_panel_e | p_panel_f) /
                (p_panel_g | p_panel_h | p_panel_i)
 
-# Save main figure WITHOUT caption
 ggsave(
     filename = file.path(OUT_DIR, "Publication_Figure_9Panel_MainFigure.png"),
     plot = main_figure,
@@ -1193,35 +1188,13 @@ ggsave(
 )
 
 # ==============================================================================
-# CREATE CAPTION AS SEPARATE IMAGE - FIXED TO USE FULL WIDTH
+# CREATE CAPTION AS SEPARATE IMAGE - FIXED SINGLE STRING
 # ==============================================================================
 cat("Creating caption image...\n")
 
-# FIXED: Create caption as a single textbox that wraps to full width
-caption_text <- paste(
-    "Figure: U251 Transcriptomic Evolution Through LITT Therapy and Therapeutic Target Discovery",
-    "",
-    "(A) Global transcriptomic structure: PCA biplot showing evolutionary trajectory from in vitro culture through primary tumor to post-LITT recurrence, with gene driver arrows indicating major contributors to variance; scree plot quantifies variance explained by principal components.",
-    "",
-    "(B) Differential expression landscape: Superimposed volcano plots for three experimental contrasts (blue=brain adaptation, orange=therapy impact, green=total evolution), with gene counts annotated for up/down-regulated genes (FDR<0.05, |log2FC|>1); dashed lines mark significance thresholds (vertical: FC=2, horizontal: FDR=0.05).",
-    "",
-    "(C) Subtype trajectory analysis: Longitudinal evolution of GBM molecular subtypes (Verhaak, Neftel, Garofano classifications) across LITT therapy; asterisks indicate statistically significant pairwise changes via arrayWeights-adjusted limma with FDR correction (*p<0.05, **p<0.01, ***p<0.001).",
-    "",
-    "(D) Semantic pathway organization: Hierarchical clustering of enriched pathways (FDR<0.05) based on gene overlap, grouped into functional modules with clade labels.",
-    "",
-    "(E) Protein interaction network: STRING-based PPI network of differentially expressed genes; red nodes=hub proteins with highest connectivity (top 15 by degree centrality).",
-    "",
-    "(F) Polypharmacology landscape: Bipartite network connecting drug candidates to enriched pathways based on shared gene sets (≥3 genes); triangular nodes indicate multi-target drugs affecting ≥3 pathways.",
-    "",
-    "(G) Drug-pathway mechanistic overlap: Heatmap quantifying shared genes between top drug signatures and enriched biological pathways, revealing mechanism-of-action relationships.",
-    "",
-    "(H) Integrated drug scoring: 2D visualization of drug candidates plotted by therapeutic enrichment (|NES|) vs BBB penetration (threshold=0.5); point size represents integrated score (|NES|^1.5 × BBB), color indicates polypharmacology potential.",
-    "",
-    "(I) Top drug candidates: Ranked table of 20 prioritized drugs with key metrics including normalized enrichment score, BBB penetration probability, clinical trial activity, pathway coverage, and composite integrated score.",
-    sep = "\n\n"
-)
+# FIXED: Single string for natural wrapping
+caption_text <- "Figure: U251 Transcriptomic Evolution Through LITT Therapy and Therapeutic Target Discovery. (A) Global transcriptomic structure: PCA biplot showing evolutionary trajectory from in vitro culture through primary tumor to post-LITT recurrence, with gene driver arrows indicating major contributors to variance; scree plot quantifies variance explained by principal components. (B) Differential expression landscape: Superimposed volcano plots for three experimental contrasts (blue=brain adaptation, orange=therapy impact, green=total evolution), with gene counts annotated for up/down-regulated genes (FDR<0.05, |log2FC|>1); dashed lines mark significance thresholds (vertical: FC=2, horizontal: FDR=0.05). (C) Subtype trajectory analysis: Longitudinal evolution of GBM molecular subtypes (Verhaak, Neftel, Garofano classifications) across LITT therapy; asterisks indicate statistically significant pairwise changes via arrayWeights-adjusted limma with FDR correction (*p<0.05, **p<0.01, ***p<0.001). (D) Semantic pathway organization: Hierarchical clustering of enriched pathways (FDR<0.05) based on gene overlap, grouped into functional modules with clade labels. (E) Protein interaction network: STRING-based PPI network of differentially expressed genes; red nodes=hub proteins with highest connectivity (top 15 by degree centrality). (F) Polypharmacology landscape: Bipartite network connecting drug candidates to enriched pathways based on shared gene sets (≥3 genes); triangular nodes indicate multi-target drugs affecting ≥3 pathways. (G) Drug-pathway mechanistic overlap: Heatmap quantifying shared genes between top drug signatures and enriched biological pathways, revealing mechanism-of-action relationships. (H) Integrated drug scoring: 2D visualization of drug candidates plotted by therapeutic enrichment (|NES|) vs BBB penetration (threshold=0.5); point size represents integrated score (|NES|^1.5 × BBB), color indicates polypharmacology potential. (I) Top drug candidates: Ranked table of 20 prioritized drugs with key metrics including normalized enrichment score, BBB penetration probability, clinical trial activity, pathway coverage, and composite integrated score."
 
-# FIXED: Use ggtext::geom_textbox which auto-wraps to specified width
 p_caption <- ggplot() +
     ggtext::geom_textbox(
         aes(x = 0.5, y = 0.5),
@@ -1229,7 +1202,7 @@ p_caption <- ggplot() +
         hjust = 0,
         vjust = 1,
         halign = 0,
-        width = unit(0.95, "npc"),  # Use 95% of plot width (leaving 2.5% margin each side)
+        width = unit(0.95, "npc"),
         size = 6,
         family = "sans",
         lineheight = 1.2,
@@ -1241,8 +1214,7 @@ p_caption <- ggplot() +
     theme_void() +
     theme(plot.margin = margin(20, 20, 20, 20))
 
-# Calculate height based on content
-caption_height <- 9  # Fixed height that should accommodate the text
+caption_height <- 9
 
 ggsave(
     filename = file.path(OUT_DIR, "Publication_Figure_9Panel_Caption.png"),
@@ -1257,40 +1229,33 @@ ggsave(
 cat(sprintf("  Caption saved: 30 x %.1f inches @ 600 DPI\n", caption_height))
 
 # ==============================================================================
-# FIXED: IMAGEMAGICK COMMAND USING R MAGICK PACKAGE WITH ABSOLUTE PATHS
+# STITCH FIGURE AND CAPTION TOGETHER
 # ==============================================================================
 cat("Stitching figure and caption together...\n")
 
 Sys.sleep(2)
 
-# FIXED: Use R magick package instead of system command
 tryCatch({
     main_fig <- image_read(file.path(OUT_DIR, "Publication_Figure_9Panel_MainFigure.png"))
     caption_fig <- image_read(file.path(OUT_DIR, "Publication_Figure_9Panel_Caption.png"))
-    
+
     combined <- image_append(c(main_fig, caption_fig), stack = TRUE)
-    
-    image_write(combined, 
+
+    image_write(combined,
                 path = file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.png"),
                 format = "png",
                 quality = 100)
-    
+
     cat("  ✓ SUCCESS: Created combined figure with caption\n")
     cat(sprintf("  Output: %s\n", file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.png")))
-    
+
 }, error = function(e) {
     cat(sprintf("  Error with magick package: %s\n", e$message))
     cat("  Individual images saved successfully:\n")
     cat(sprintf("    - %s\n", file.path(OUT_DIR, "Publication_Figure_9Panel_MainFigure.png")))
     cat(sprintf("    - %s\n", file.path(OUT_DIR, "Publication_Figure_9Panel_Caption.png")))
-    cat("\n  Try manually with:\n")
-    cat(sprintf("    cd '%s'\n", OUT_DIR))
-    cat("    magick Publication_Figure_9Panel_MainFigure.png \\\n")
-    cat("           Publication_Figure_9Panel_Caption.png \\\n")
-    cat("           -append Publication_Figure_9Panel_VOLCANO_COMPLETE.png\n")
 })
 
-# Also save PDF version
 ggsave(
     filename = file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.pdf"),
     plot = main_figure,
@@ -1301,19 +1266,19 @@ ggsave(
 cat("  ✓ Created PDF version (main figure only, no caption)\n")
 
 captions <- c(
-    "FIGURE: U251 Transcriptomic Evolution and Therapeutic Target Discovery - FIXED VERSION",
+    "FIGURE: U251 Transcriptomic Evolution and Therapeutic Target Discovery - FINAL FIXED VERSION",
     "",
-    "FIXES IN THIS VERSION:",
-    "- ✅ Panel G: Heatmap column labels rotated -60° (to the right) instead of 45° to the left",
-    "- ✅ Panel G: Heatmap properly centered in subpanel space (no shifting up into panel D)",
-    "- ✅ ImageMagick: Fixed command to use absolute paths and proper working directory",
-    "",
-    "[Rest of documentation same as before...]"
+    "ALL FIXES COMPLETE:",
+    "- ✅ Panel G: Heatmap rendered at full size (6000x6000 @ 600 DPI)",
+    "- ✅ Panel G: NO truncation of pathway names (full length preserved)",
+    "- ✅ Panel G: Title padding increased (15mm top) to prevent cropping",
+    "- ✅ Panel G: Heatmap dynamically scaled to fit panel space",
+    "- ✅ Caption: Single string with natural wrapping at margins"
 )
 
 writeLines(captions, file.path(OUT_DIR, "Figure_Captions_VOLCANO_COMPLETE.txt"))
 
 cat("\n✅ Publication figure complete!\n")
-cat(sprintf("   PNG: %s\n", output_path))
+cat(sprintf("   PNG: %s/Publication_Figure_9Panel_VOLCANO_COMPLETE.png\n", OUT_DIR))
 cat(sprintf("   PDF: %s/Publication_Figure_9Panel_VOLCANO_COMPLETE.pdf\n", OUT_DIR))
 cat(sprintf("   Captions: %s/Figure_Captions_VOLCANO_COMPLETE.txt\n", OUT_DIR))
