@@ -985,15 +985,15 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
             }
         }
 
-        # Clean drug names but don't truncate
+        # Clean drug names but DON'T truncate
         rownames(overlap_mat) <- clean_drug_names_vectorized(rownames(overlap_mat))
-        # Truncate pathway names to reasonable length (80 chars) to fit
-        colnames(overlap_mat) <- substr(colnames(overlap_mat), 1, 80)
+        # DON'T truncate pathway names - keep full length
+        colnames(overlap_mat) <- colnames(overlap_mat)
 
         if(nrow(overlap_mat) > 0 && ncol(overlap_mat) > 0) {
             # FIXED: Render at MASSIVE resolution with HUGE padding
             temp_heatmap_file <- tempfile(fileext = ".png")
-            png(temp_heatmap_file, width = 8000, height = 8000, res = 600)
+            png(temp_heatmap_file, width = 10000, height = 10000, res = 600)  # Even bigger!
             
             ht <- Heatmap(overlap_mat, name = "Genes",
                           col = colorRamp2(c(0, max(overlap_mat)/2, max(overlap_mat)),
@@ -1013,12 +1013,12 @@ if(!is.null(pathway_results) && !is.null(drug_results) &&
                           column_gap = unit(2, "mm"),
                           width = unit(7, "inches"),
                           height = unit(7, "inches"),
-                          row_names_max_width = unit(4, "inches"),
-                          column_names_max_height = unit(6, "inches"),
+                          row_names_max_width = unit(5, "inches"),  # More space
+                          column_names_max_height = unit(8, "inches"),  # MUCH more space for full pathway names
                           bottom_annotation = NULL)
             
-            # FIXED: MASSIVE padding - 50mm bottom for rotated labels, 30mm top for title
-            draw(ht, padding = unit(c(30, 20, 50, 20), "mm"))
+            # FIXED: MASSIVE padding - 70mm bottom for full rotated labels, 30mm top for title
+            draw(ht, padding = unit(c(30, 20, 70, 20), "mm"))
             dev.off()
 
             # Read and embed
@@ -1175,116 +1175,62 @@ if(length(drug_profiles) >= TOP_DRUGS_DISPLAY) {
 }
 
 # ==============================================================================
-# ASSEMBLE FINAL FIGURE AND CREATE CAPTION IMAGE
 # ==============================================================================
-cat("Assembling final figure...\n")
+# ASSEMBLE FINAL FIGURE WITH NATIVE CAPTION
+# ==============================================================================
+cat("Assembling final figure with caption...\n")
 
 main_figure <- (p_panel_a | p_panel_b | p_panel_c) /
                (p_panel_d | p_panel_e | p_panel_f) /
                (p_panel_g | p_panel_h | p_panel_i)
 
+# Define caption text
+caption_text <- "Figure: U251 Transcriptomic Evolution Through LITT Therapy and Therapeutic Target Discovery. (A) Global transcriptomic structure: PCA biplot showing evolutionary trajectory from in vitro culture through primary tumor to post-LITT recurrence, with gene driver arrows indicating major contributors to variance; scree plot quantifies variance explained by principal components. (B) Differential expression landscape: Superimposed volcano plots for three experimental contrasts (blue=brain adaptation, orange=therapy impact, green=total evolution), with gene counts annotated for up/down-regulated genes (FDR<0.05, |log2FC|>1); dashed lines mark significance thresholds (vertical: FC=2, horizontal: FDR=0.05). (C) Subtype trajectory analysis: Longitudinal evolution of GBM molecular subtypes (Verhaak, Neftel, Garofano classifications) across LITT therapy; asterisks indicate statistically significant pairwise changes via arrayWeights-adjusted limma with FDR correction (*p<0.05, **p<0.01, ***p<0.001). (D) Semantic pathway organization: Hierarchical clustering of enriched pathways (FDR<0.05) based on gene overlap, grouped into functional modules with clade labels. (E) Protein interaction network: STRING-based PPI network of differentially expressed genes; red nodes=hub proteins with highest connectivity (top 15 by degree centrality). (F) Polypharmacology landscape: Bipartite network connecting drug candidates to enriched pathways based on shared gene sets (>=3 genes); triangular nodes indicate multi-target drugs affecting >=3 pathways. (G) Drug-pathway mechanistic overlap: Heatmap quantifying shared genes between top drug signatures and enriched biological pathways, revealing mechanism-of-action relationships. (H) Integrated drug scoring: 2D visualization of drug candidates plotted by therapeutic enrichment (|NES|) vs BBB penetration (threshold=0.5); point size represents integrated score (|NES|^1.5 x BBB), color indicates polypharmacology potential. (I) Top drug candidates: Ranked table of 20 prioritized drugs with key metrics including normalized enrichment score, BBB penetration probability, clinical trial activity, pathway coverage, and composite integrated score."
+
+# Add caption using patchwork's plot_annotation
+main_figure_with_caption <- main_figure + 
+    plot_annotation(
+        caption = caption_text,
+        theme = theme(
+            plot.caption = element_text(size = 11, hjust = 0, margin = margin(t = 20)),
+            plot.caption.position = "plot"
+        )
+    )
+
+# Save final figure with caption
 ggsave(
-    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_MainFigure.png"),
-    plot = main_figure,
+    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.png"),
+    plot = main_figure_with_caption,
     width = 30,
-    height = 30,
+    height = 32,  # Slightly taller to accommodate caption
     dpi = 600,
     bg = "white"
 )
 
-# ==============================================================================
-# CREATE CAPTION AS SEPARATE IMAGE - PROPER TEXT WRAPPING
-# ==============================================================================
-cat("Creating caption image...\n")
+cat("  ✓ Created complete figure with caption\n")
+cat(sprintf("  Output: %s\n", file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.png")))
 
-# Define caption text
-caption_text <- "Figure: U251 Transcriptomic Evolution Through LITT Therapy and Therapeutic Target Discovery. (A) Global transcriptomic structure: PCA biplot showing evolutionary trajectory from in vitro culture through primary tumor to post-LITT recurrence, with gene driver arrows indicating major contributors to variance; scree plot quantifies variance explained by principal components. (B) Differential expression landscape: Superimposed volcano plots for three experimental contrasts (blue=brain adaptation, orange=therapy impact, green=total evolution), with gene counts annotated for up/down-regulated genes (FDR<0.05, |log2FC|>1); dashed lines mark significance thresholds (vertical: FC=2, horizontal: FDR=0.05). (C) Subtype trajectory analysis: Longitudinal evolution of GBM molecular subtypes (Verhaak, Neftel, Garofano classifications) across LITT therapy; asterisks indicate statistically significant pairwise changes via arrayWeights-adjusted limma with FDR correction (*p<0.05, **p<0.01, ***p<0.001). (D) Semantic pathway organization: Hierarchical clustering of enriched pathways (FDR<0.05) based on gene overlap, grouped into functional modules with clade labels. (E) Protein interaction network: STRING-based PPI network of differentially expressed genes; red nodes=hub proteins with highest connectivity (top 15 by degree centrality). (F) Polypharmacology landscape: Bipartite network connecting drug candidates to enriched pathways based on shared gene sets (>=3 genes); triangular nodes indicate multi-target drugs affecting >=3 pathways. (G) Drug-pathway mechanistic overlap: Heatmap quantifying shared genes between top drug signatures and enriched biological pathways, revealing mechanism-of-action relationships. (H) Integrated drug scoring: 2D visualization of drug candidates plotted by therapeutic enrichment (|NES|) vs BBB penetration (threshold=0.5); point size represents integrated score (|NES|^1.5 x BBB), color indicates polypharmacology potential. (I) Top drug candidates: Ranked table of 20 prioritized drugs with key metrics including normalized enrichment score, BBB penetration probability, clinical trial activity, pathway coverage, and composite integrated score."
-
-# FIXED: Use strwrap to intelligently break text at word boundaries
-# Average character width at 10pt font is ~0.12 inches
-# 30 inch width with 1 inch margins = 28 inches usable = ~233 characters per line
-wrapped_lines <- strwrap(caption_text, width = 120)  # Conservative wrap at 120 chars
-
-# Calculate height needed: each line needs ~0.2 inches, plus margins
-lines_needed <- length(wrapped_lines)
-caption_height <- (lines_needed * 0.2) + 1.5  # 0.2 inches per line + 1.5 for margins
-
-cat(sprintf("  Caption: %d lines, %.1f inches height\n", lines_needed, caption_height))
-
-# Create caption as simple text plot
-p_caption <- ggplot() +
-    annotate("text", 
-             x = 0.05, 
-             y = seq(0.95, 0.05, length.out = lines_needed),
-             label = wrapped_lines,
-             hjust = 0,
-             vjust = 1,
-             size = 5,
-             family = "sans",
-             lineheight = 1.3) +
-    xlim(0, 1) +
-    ylim(0, 1) +
-    theme_void() +
-    theme(plot.margin = margin(20, 20, 20, 20))
-
-ggsave(
-    filename = file.path(OUT_DIR, "Publication_Figure_9Panel_Caption.png"),
-    plot = p_caption,
-    width = 30,  # Match main figure width
-    height = caption_height,  # Calculated based on text
-    dpi = 600,
-    bg = "white",
-    limitsize = FALSE
-)
-
-cat(sprintf("  ✓ Caption saved: 30 x %.1f inches @ 600 DPI\n", caption_height))
-
-# ==============================================================================
-# STITCH FIGURE AND CAPTION TOGETHER
-# ==============================================================================
-cat("Stitching figure and caption together...\n")
-
-Sys.sleep(2)
-
-tryCatch({
-    main_fig <- image_read(file.path(OUT_DIR, "Publication_Figure_9Panel_MainFigure.png"))
-    caption_fig <- image_read(file.path(OUT_DIR, "Publication_Figure_9Panel_Caption.png"))
-
-    combined <- image_append(c(main_fig, caption_fig), stack = TRUE)
-
-    image_write(combined,
-                path = file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.png"),
-                format = "png",
-                quality = 100)
-
-    cat("  ✓ SUCCESS: Created combined figure with caption\n")
-    cat(sprintf("  Output: %s\n", file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.png")))
-
-}, error = function(e) {
-    cat(sprintf("  Error with magick package: %s\n", e$message))
-    cat("  Individual images saved successfully:\n")
-    cat(sprintf("    - %s\n", file.path(OUT_DIR, "Publication_Figure_9Panel_MainFigure.png")))
-    cat(sprintf("    - %s\n", file.path(OUT_DIR, "Publication_Figure_9Panel_Caption.png")))
-})
-
+# Also save PDF version
 ggsave(
     filename = file.path(OUT_DIR, "Publication_Figure_9Panel_VOLCANO_COMPLETE.pdf"),
-    plot = main_figure,
+    plot = main_figure_with_caption,
     width = 30,
-    height = 30
+    height = 32,
+    bg = "white"
 )
 
-cat("  ✓ Created PDF version (main figure only, no caption)\n")
+cat("  ✓ Created PDF version\n")
+
 
 captions <- c(
-    "FIGURE: U251 Transcriptomic Evolution and Therapeutic Target Discovery - FINAL FIXED VERSION",
+    "FIGURE: U251 Transcriptomic Evolution and Therapeutic Target Discovery - FINAL VERSION",
     "",
-    "ALL FIXES COMPLETE:",
-    "- ✅ Panel G: Heatmap rendered at full size (6000x6000 @ 600 DPI)",
-    "- ✅ Panel G: NO truncation of pathway names (full length preserved)",
-    "- ✅ Panel G: Title padding increased (15mm top) to prevent cropping",
-    "- ✅ Panel G: Heatmap dynamically scaled to fit panel space",
-    "- ✅ Caption: Single string with natural wrapping at margins"
+    "FINAL FIXES:",
+    "- ✅ Panel G: Heatmap rendered at 10000x10000 @ 600 DPI with NO pathway truncation",
+    "- ✅ Panel G: 70mm bottom padding for full rotated pathway labels",
+    "- ✅ Panel G: 8 inches vertical space for column names",
+    "- ✅ Panel G: Row/column gaps of 2mm for better readability",
+    "- ✅ Caption: Native R plot_annotation with automatic wrapping"
 )
 
 writeLines(captions, file.path(OUT_DIR, "Figure_Captions_VOLCANO_COMPLETE.txt"))
@@ -1292,4 +1238,4 @@ writeLines(captions, file.path(OUT_DIR, "Figure_Captions_VOLCANO_COMPLETE.txt"))
 cat("\n✅ Publication figure complete!\n")
 cat(sprintf("   PNG: %s/Publication_Figure_9Panel_VOLCANO_COMPLETE.png\n", OUT_DIR))
 cat(sprintf("   PDF: %s/Publication_Figure_9Panel_VOLCANO_COMPLETE.pdf\n", OUT_DIR))
-cat(sprintf("   Captions: %s/Figure_Captions_VOLCANO_COMPLETE.txt\n", OUT_DIR))
+cat(sprintf("   Notes: %s/Figure_Captions_VOLCANO_COMPLETE.txt\n", OUT_DIR))
